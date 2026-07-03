@@ -1,0 +1,134 @@
+{
+  "info": {
+    "name": "Chatbot Fisioterapia — API",
+    "description": "Coleção para testar o backend do chatbot. Suba o backend com `npm run dev` antes de usar. Variáveis em 'Variables' (baseUrl, verifyToken, testPhone, conversationId).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "verifyToken", "value": "meu-token-de-verificacao-dev" },
+    { "key": "testPhone", "value": "5511955554444" },
+    { "key": "conversationId", "value": "COLE_O_ID_AQUI" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": { "method": "GET", "url": "{{baseUrl}}/health" }
+        },
+        {
+          "name": "GET /health/db (testa Supabase)",
+          "request": { "method": "GET", "url": "{{baseUrl}}/health/db" }
+        }
+      ]
+    },
+    {
+      "name": "Webhook (Meta)",
+      "item": [
+        {
+          "name": "GET /webhook (verificação)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/webhook?hub.mode=subscribe&hub.verify_token={{verifyToken}}&hub.challenge=DESAFIO123",
+              "host": ["{{baseUrl}}"],
+              "path": ["webhook"],
+              "query": [
+                { "key": "hub.mode", "value": "subscribe" },
+                { "key": "hub.verify_token", "value": "{{verifyToken}}" },
+                { "key": "hub.challenge", "value": "DESAFIO123" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Fluxo guiado — 1) quero agendar",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/webhook",
+            "body": { "mode": "raw", "raw": "{\n  \"object\": \"whatsapp_business_account\",\n  \"entry\": [{ \"id\": \"WABA\", \"changes\": [{ \"field\": \"messages\", \"value\": {\n    \"messaging_product\": \"whatsapp\",\n    \"metadata\": { \"display_phone_number\": \"5511999999999\", \"phone_number_id\": \"PHONE_ID\" },\n    \"contacts\": [{ \"profile\": { \"name\": \"Maria Teste\" }, \"wa_id\": \"{{testPhone}}\" }],\n    \"messages\": [{ \"from\": \"{{testPhone}}\", \"id\": \"wamid.G1\", \"timestamp\": \"1700000000\", \"type\": \"text\", \"text\": { \"body\": \"quero agendar\" } }]\n  }}]}]\n}" }
+          }
+        },
+        {
+          "name": "Fluxo guiado — 2) nome completo",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/webhook",
+            "body": { "mode": "raw", "raw": "{\n  \"object\": \"whatsapp_business_account\",\n  \"entry\": [{ \"id\": \"WABA\", \"changes\": [{ \"field\": \"messages\", \"value\": {\n    \"messaging_product\": \"whatsapp\",\n    \"metadata\": { \"display_phone_number\": \"5511999999999\", \"phone_number_id\": \"PHONE_ID\" },\n    \"contacts\": [{ \"profile\": { \"name\": \"Maria Teste\" }, \"wa_id\": \"{{testPhone}}\" }],\n    \"messages\": [{ \"from\": \"{{testPhone}}\", \"id\": \"wamid.G2\", \"timestamp\": \"1700000001\", \"type\": \"text\", \"text\": { \"body\": \"Maria Aparecida Silva\" } }]\n  }}]}]\n}" }
+          }
+        },
+        {
+          "name": "Fluxo guiado — 3) CPF",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/webhook",
+            "body": { "mode": "raw", "raw": "{\n  \"object\": \"whatsapp_business_account\",\n  \"entry\": [{ \"id\": \"WABA\", \"changes\": [{ \"field\": \"messages\", \"value\": {\n    \"messaging_product\": \"whatsapp\",\n    \"metadata\": { \"display_phone_number\": \"5511999999999\", \"phone_number_id\": \"PHONE_ID\" },\n    \"contacts\": [{ \"profile\": { \"name\": \"Maria Teste\" }, \"wa_id\": \"{{testPhone}}\" }],\n    \"messages\": [{ \"from\": \"{{testPhone}}\", \"id\": \"wamid.G3\", \"timestamp\": \"1700000002\", \"type\": \"text\", \"text\": { \"body\": \"123.456.789-01\" } }]\n  }}]}]\n}" }
+          }
+        },
+        {
+          "name": "Fluxo guiado — 4) data de nascimento",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/webhook",
+            "body": { "mode": "raw", "raw": "{\n  \"object\": \"whatsapp_business_account\",\n  \"entry\": [{ \"id\": \"WABA\", \"changes\": [{ \"field\": \"messages\", \"value\": {\n    \"messaging_product\": \"whatsapp\",\n    \"metadata\": { \"display_phone_number\": \"5511999999999\", \"phone_number_id\": \"PHONE_ID\" },\n    \"contacts\": [{ \"profile\": { \"name\": \"Maria Teste\" }, \"wa_id\": \"{{testPhone}}\" }],\n    \"messages\": [{ \"from\": \"{{testPhone}}\", \"id\": \"wamid.G4\", \"timestamp\": \"1700000003\", \"type\": \"text\", \"text\": { \"body\": \"15/03/1990\" } }]\n  }}]}]\n}" }
+          }
+        },
+        {
+          "name": "Fluxo guiado — 5) convênio",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/webhook",
+            "body": { "mode": "raw", "raw": "{\n  \"object\": \"whatsapp_business_account\",\n  \"entry\": [{ \"id\": \"WABA\", \"changes\": [{ \"field\": \"messages\", \"value\": {\n    \"messaging_product\": \"whatsapp\",\n    \"metadata\": { \"display_phone_number\": \"5511999999999\", \"phone_number_id\": \"PHONE_ID\" },\n    \"contacts\": [{ \"profile\": { \"name\": \"Maria Teste\" }, \"wa_id\": \"{{testPhone}}\" }],\n    \"messages\": [{ \"from\": \"{{testPhone}}\", \"id\": \"wamid.G5\", \"timestamp\": \"1700000004\", \"type\": \"text\", \"text\": { \"body\": \"Unimed\" } }]\n  }}]}]\n}" }
+          }
+        },
+        {
+          "name": "Fluxo guiado — 6) escolher horário (1)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/webhook",
+            "body": { "mode": "raw", "raw": "{\n  \"object\": \"whatsapp_business_account\",\n  \"entry\": [{ \"id\": \"WABA\", \"changes\": [{ \"field\": \"messages\", \"value\": {\n    \"messaging_product\": \"whatsapp\",\n    \"metadata\": { \"display_phone_number\": \"5511999999999\", \"phone_number_id\": \"PHONE_ID\" },\n    \"contacts\": [{ \"profile\": { \"name\": \"Maria Teste\" }, \"wa_id\": \"{{testPhone}}\" }],\n    \"messages\": [{ \"from\": \"{{testPhone}}\", \"id\": \"wamid.G6\", \"timestamp\": \"1700000005\", \"type\": \"text\", \"text\": { \"body\": \"1\" } }]\n  }}]}]\n}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Painel (Conversas)",
+      "item": [
+        {
+          "name": "GET /api/conversations",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/conversations" }
+        },
+        {
+          "name": "GET /api/conversations/:id/messages",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/conversations/{{conversationId}}/messages" }
+        },
+        {
+          "name": "POST .../takeover (assumir)",
+          "request": { "method": "POST", "url": "{{baseUrl}}/api/conversations/{{conversationId}}/takeover" }
+        },
+        {
+          "name": "POST .../release (devolver pro bot)",
+          "request": { "method": "POST", "url": "{{baseUrl}}/api/conversations/{{conversationId}}/release" }
+        },
+        {
+          "name": "POST .../messages (enviar manual)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/conversations/{{conversationId}}/messages",
+            "body": { "mode": "raw", "raw": "{\n  \"text\": \"Olá, aqui é a recepção da clínica!\"\n}" }
+          }
+        }
+      ]
+    }
+  ]
+}

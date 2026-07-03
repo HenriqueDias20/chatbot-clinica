@@ -1,0 +1,104 @@
+# docker-compose.yml — Chatbot Fisioterapia
+# Sobe toda a stack: PostgreSQL, Redis, backend (Fastify), frontend (Vite) e Nginx.
+#
+# Uso rápido:
+#   cp .env.example .env   # e preencha as credenciais
+#   docker compose up -d postgres redis        # apenas a infra (sem precisar do código)
+#   docker compose up --build                  # stack completa (após etapas de backend/frontend)
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: clinica_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-clinica_bot}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-user} -d ${POSTGRES_DB:-clinica_bot}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - clinica_net
+
+  redis:
+    image: redis:7-alpine
+    container_name: clinica_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - clinica_net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: clinica_backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Dentro da rede do compose os hosts são os nomes dos serviços.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-clinica_bot}
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "${PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - clinica_net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: clinica_frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    networks:
+      - clinica_net
+
+  nginx:
+    image: nginx:alpine
+    container_name: clinica_nginx
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - clinica_net
+
+volumes:
+  pgdata:
+  redisdata:
+
+networks:
+  clinica_net:
+    driver: bridge
