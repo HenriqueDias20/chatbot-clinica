@@ -59,7 +59,9 @@ async function runUp(): Promise<void> {
     }
     logger.info({ count: pending.length }, 'Migrations concluídas');
   } finally {
-    await client.end();
+    // Fire-and-forget: fechar a conexão com o pooler (pgbouncer + SSL) pode travar,
+    // e o process.exit no final encerra tudo de qualquer forma.
+    void client.end().catch(() => {});
   }
 }
 
@@ -74,7 +76,9 @@ async function runStatus(): Promise<void> {
       logger.info({ migration: f, status: done.has(f) ? 'aplicada' : 'pendente' });
     }
   } finally {
-    await client.end();
+    // Fire-and-forget: fechar a conexão com o pooler (pgbouncer + SSL) pode travar,
+    // e o process.exit no final encerra tudo de qualquer forma.
+    void client.end().catch(() => {});
   }
 }
 
