@@ -81,7 +81,13 @@ async function runStatus(): Promise<void> {
 const cmd = process.argv[2] ?? 'up';
 const run = cmd === 'status' ? runStatus : runUp;
 
-run().catch((err) => {
-  logger.error({ err }, 'Erro no runner de migrations');
-  process.exit(1);
-});
+run()
+  .then(() => {
+    // Encerra explicitamente para não travar o processo (ex.: no start do Railway,
+    // onde o comando é "npm run migrate && npm start" — o start só roda se o migrate sair).
+    process.exit(0);
+  })
+  .catch((err) => {
+    logger.error({ err }, 'Erro no runner de migrations');
+    process.exit(1);
+  });
