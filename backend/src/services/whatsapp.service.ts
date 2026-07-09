@@ -1,6 +1,6 @@
 import { env } from '../config/env.js';
 import { logger, type Logger } from '../lib/logger.js';
-import { normalizePhone } from '../lib/phone.js';
+import { toWhatsAppRecipient } from '../lib/phone.js';
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -91,7 +91,7 @@ export function createWhatsAppService(deps: WhatsAppDeps) {
   async function sendText(phone: string, text: string): Promise<SendResult> {
     const payload = {
       messaging_product: 'whatsapp',
-      to: normalizePhone(phone),
+      to: toWhatsAppRecipient(phone),
       type: 'text',
       text: { body: text, preview_url: false },
     };
@@ -113,7 +113,7 @@ export function createWhatsAppService(deps: WhatsAppDeps) {
 
     const payload = {
       messaging_product: 'whatsapp',
-      to: normalizePhone(phone),
+      to: toWhatsAppRecipient(phone),
       type: 'interactive',
       interactive: {
         type: 'button',
@@ -146,7 +146,7 @@ export function createWhatsAppService(deps: WhatsAppDeps) {
 
     const payload = {
       messaging_product: 'whatsapp',
-      to: normalizePhone(phone),
+      to: toWhatsAppRecipient(phone),
       type: 'template',
       template: {
         name: templateName,
