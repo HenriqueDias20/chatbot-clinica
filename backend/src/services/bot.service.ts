@@ -67,6 +67,7 @@ const HUMAN_KEYWORDS = /\b(atendente|recep[cç][aã]o|falar com (algu[eé]m|huma
 const CONVENIOS = ['Particular', 'Cabergs', 'Unimed', 'Saúde Caixa', 'Amil', 'Geap', 'Ipê Saúde'];
 
 function isWithinBusinessHours(now: Date, configs: Record<string, string>): boolean {
+  if (env.BUSINESS_HOURS_ALWAYS_OPEN) return true; // modo teste: atende sempre
   const day = now.getDay();
   if (day === 0 || day === 6) return false;
   const start = configs.business_hours_start ?? env.BUSINESS_HOURS_START;

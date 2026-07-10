@@ -41,6 +41,11 @@ const schema = z.object({
   // Regras de negócio
   BUSINESS_HOURS_START: z.string().default('08:00'),
   BUSINESS_HOURS_END: z.string().default('18:00'),
+  // Testes: quando true, o bot atende a qualquer hora/dia (ignora horário comercial).
+  BUSINESS_HOURS_ALWAYS_OPEN: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true' || v === '1'),
   TIMEZONE: z.string().default('America/Sao_Paulo'),
 });
 
