@@ -5,6 +5,8 @@ import {
   setConversationStatus,
   assignConversation,
   unassignConversation,
+  markRead,
+  markFirstHumanResponse,
 } from '../repositories/conversation.repo.js';
 import { getLastMessages, saveMessage } from '../repositories/message.repo.js';
 import { getPatientAppointments } from '../repositories/appointment.repo.js';
@@ -15,9 +17,10 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
   // Todas as rotas do painel exigem login.
   app.addHook('preHandler', app.authenticate);
 
-  // Lista conversas (ativas por padrão; ?filter=finalized para encerradas).
+  // Lista conversas (ativas por padrão; ?filter=finalized|unread).
   app.get<{ Querystring: { filter?: string } }>('/api/conversations', async (req) => {
-    const filter = req.query.filter === 'finalized' ? 'finalized' : 'active';
+    const q = req.query.filter;
+    const filter = q === 'finalized' || q === 'unread' ? q : 'active';
     const conversations = await listConversationsForPanel(filter);
     return { conversations };
   });
@@ -66,6 +69,12 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true, status: 'closed' };
   });
 
+  // Marca a conversa como lida (atendente abriu no painel) → sai da aba "Não lidas".
+  app.post<{ Params: { id: string } }>('/api/conversations/:id/read', async (req) => {
+    await markRead(req.params.id);
+    return { ok: true };
+  });
+
   // Recepcionista envia mensagem manual.
   app.post<{ Params: { id: string }; Body: { text?: string } }>(
     '/api/conversations/:id/messages',
@@ -77,6 +86,8 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
       if (!convo) return reply.code(404).send({ error: 'Conversa não encontrada' });
 
       const message = await saveMessage(convo.id, 'assistant', text);
+      // Se a conversa foi transbordada, registra a 1ª resposta do atendente (métrica de SLA).
+      await markFirstHumanResponse(convo.id);
       const result = await whatsappService.sendText(convo.phone, text);
 
       bus.emit('message:new', {

@@ -9,6 +9,13 @@ export interface Conversation {
   state: Record<string, unknown>;
   last_message_at: string | null;
   created_at: string;
+  category: string | null;
+  action: string | null;
+  subtype: string | null;
+  handed_off_at: string | null;
+  first_human_response_at: string | null;
+  closed_at: string | null;
+  last_read_at: string | null;
 }
 
 /** Busca a conversa ativa (não fechada) do paciente ou cria uma nova. */
@@ -39,15 +46,29 @@ export interface ConversationListItem {
   assigned_user_id: string | null;
   assigned_user_name: string | null;
   assigned_at: string | null;
+  category: string | null;
+  action: string | null;
+  subtype: string | null;
+  last_read_at: string | null;
 }
 
-/** Conversas para o painel (ativas ou finalizadas), com dados do paciente e prévia da última mensagem. */
+/** Conversas para o painel (ativas, finalizadas ou não lidas), com dados do paciente e prévia da última mensagem. */
 export async function listConversationsForPanel(
-  filter: 'active' | 'finalized' = 'active',
+  filter: 'active' | 'finalized' | 'unread' = 'active',
 ): Promise<ConversationListItem[]> {
-  const whereStatus = filter === 'finalized' ? "c.status = 'closed'" : "c.status <> 'closed'";
+  let whereClause: string;
+  if (filter === 'finalized') {
+    whereClause = "c.status = 'closed'";
+  } else if (filter === 'unread') {
+    // Não lida: ativa, última mensagem é do cliente, e ainda não foi aberta desde então.
+    whereClause =
+      "c.status <> 'closed' and lm.role = 'user' and (c.last_read_at is null or c.last_read_at < c.last_message_at)";
+  } else {
+    whereClause = "c.status <> 'closed'";
+  }
   const res = await query<ConversationListItem>(
     `select c.id, c.status, c.last_message_at, c.created_at,
+            c.category, c.action, c.subtype, c.last_read_at,
             p.id as patient_id, p.phone, p.name,
             lm.content as last_message, lm.role as last_role,
             c.assigned_user_id, c.assigned_at, u.name as assigned_user_name
@@ -58,7 +79,7 @@ export async function listConversationsForPanel(
        select content, role from messages m
        where m.conversation_id = c.id order by m.created_at desc limit 1
      ) lm on true
-     where ${whereStatus}
+     where ${whereClause}
      order by c.last_message_at desc nulls last`,
   );
   return res.rows;
@@ -101,7 +122,51 @@ export async function getConversationWithPatient(id: string): Promise<Conversati
 }
 
 export async function setConversationStatus(id: string, status: ConversationStatus): Promise<void> {
-  await query(`update conversations set status = $2 where id = $1`, [id, status]);
+  // Ao fechar, carimba closed_at (uma vez) — alimenta a métrica de duração do dashboard.
+  await query(
+    `update conversations set status = $2,
+       closed_at = case when $2 = 'closed' then coalesce(closed_at, now()) else closed_at end
+     where id = $1`,
+    [id, status],
+  );
+}
+
+/** Grava o assunto principal da conversa (categoria/ação/tipo). Só atualiza os campos passados. */
+export async function setConversationIntake(
+  id: string,
+  fields: { category?: string | null; action?: string | null; subtype?: string | null },
+): Promise<void> {
+  const sets: string[] = [];
+  const vals: unknown[] = [id];
+  for (const [k, v] of Object.entries(fields)) {
+    if (v === undefined) continue;
+    vals.push(v);
+    sets.push(`${k} = $${vals.length}`);
+  }
+  if (sets.length === 0) return;
+  await query(`update conversations set ${sets.join(', ')} where id = $1`, vals);
+}
+
+/** Transborda para atendente: status='human' + carimba handed_off_at (uma vez). */
+export async function markHandedOff(id: string): Promise<void> {
+  await query(
+    `update conversations set status = 'human', handed_off_at = coalesce(handed_off_at, now()) where id = $1`,
+    [id],
+  );
+}
+
+/** Marca a 1ª resposta do atendente após o transbordo (uma vez). */
+export async function markFirstHumanResponse(id: string): Promise<void> {
+  await query(
+    `update conversations set first_human_response_at = now()
+     where id = $1 and first_human_response_at is null and handed_off_at is not null`,
+    [id],
+  );
+}
+
+/** Marca a conversa como lida (atendente abriu no painel). */
+export async function markRead(id: string): Promise<void> {
+  await query(`update conversations set last_read_at = now() where id = $1`, [id]);
 }
 
 /** Recepcionista assume a conversa: vira 'human' e registra quem/quando. */
@@ -187,7 +252,7 @@ export async function clearReminder(id: string): Promise<void> {
 /** Fecha conversas inativas há mais de N horas (cron da Etapa 11). Retorna qtd fechada. */
 export async function closeInactiveConversations(hours: number): Promise<number> {
   const res = await query(
-    `update conversations set status = 'closed'
+    `update conversations set status = 'closed', closed_at = coalesce(closed_at, now())
      where status <> 'closed' and last_message_at < now() - ($1 || ' hours')::interval`,
     [String(hours)],
   );

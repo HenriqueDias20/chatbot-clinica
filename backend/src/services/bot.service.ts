@@ -3,29 +3,23 @@ import { logger, type Logger } from '../lib/logger.js';
 import { normalizePhone } from '../lib/phone.js';
 import { bus } from '../lib/events.js';
 import { claudeService, type ClaudeService, type ConversationTurn, type Intent } from './claude.service.js';
-import { getNextFreeSlots, scheduleIfFree, formatSlotLabel } from './agenda.service.js';
 import { findOrCreatePatient, updatePatientFields, type Patient } from '../repositories/patient.repo.js';
 import {
   getOrCreateActiveConversation,
   setConversationState,
   setConversationStatus,
+  setConversationIntake,
+  markHandedOff,
   touchConversation,
   clearReminder,
 } from '../repositories/conversation.repo.js';
 import { getLastMessages, saveMessage } from '../repositories/message.repo.js';
-import { getNextAppointmentForPatient, updateAppointmentStatus } from '../repositories/appointment.repo.js';
 import { getConfigs, listActiveFaq } from '../repositories/config.repo.js';
 import type { InboundJob } from './queue.service.js';
 
 export type Outgoing =
   | { kind: 'text'; text: string }
   | { kind: 'buttons'; text: string; buttons: Array<{ id: string; title: string }> };
-
-interface SlotOption {
-  professionalId: string;
-  professionalName: string;
-  atISO: string;
-}
 
 type Kind = 'consulta' | 'sessao';
 
@@ -44,13 +38,11 @@ type Step =
   | 'await_tipo_outros'
   | 'convenio'
   | 'await_convenio_outros'
-  | 'choosing_slot'
   | 'await_question'
   | 'post_answer';
 
 interface State {
   step?: Step;
-  options?: SlotOption[];
   pendingKind?: Kind;
   pendingTipo?: string; // tipo escolhido (ou prefixo, quando aguardando "Outros")
 }
@@ -144,14 +136,14 @@ export function createBotService(deps: BotDeps = {}) {
   const consultaMenuText = (): Outgoing =>
     text(
       `*Consulta* — o que você deseja?\n\n` +
-        `1️⃣ Agendar consulta\n2️⃣ Cancelar consulta\n3️⃣ Confirmar consulta\n4️⃣ Voltar ao menu principal\n\n` +
+        `1️⃣ Agendar consulta\n2️⃣ Reagendar consulta\n3️⃣ Cancelar consulta\n4️⃣ Confirmar consulta\n5️⃣ Voltar ao menu principal\n\n` +
         RESPONDA,
     );
 
   const consultaTipoText = (): Outgoing =>
     text(
       `Qual tipo de consulta você deseja agendar?\n\n` +
-        `1️⃣ Primeira consulta\n2️⃣ Pós-operatório\n3️⃣ Fisiatria\n4️⃣ Medicina do Esporte\n5️⃣ Avaliação\n6️⃣ Outros\n\n` +
+        `1️⃣ Primeira consulta\n2️⃣ Retorno\n3️⃣ Pós-operatório\n4️⃣ Fisiatria\n5️⃣ Medicina do Esporte\n6️⃣ Avaliação\n7️⃣ Outros\n\n` +
         RESPONDA,
     );
 
@@ -165,14 +157,14 @@ export function createBotService(deps: BotDeps = {}) {
   const sessaoMenuText = (): Outgoing =>
     text(
       `*Sessão* — o que você deseja?\n\n` +
-        `1️⃣ Agendar sessão\n2️⃣ Cancelar sessão\n3️⃣ Confirmar sessão\n4️⃣ Voltar ao menu principal\n\n` +
+        `1️⃣ Agendar sessão\n2️⃣ Reagendar sessão\n3️⃣ Cancelar sessão\n4️⃣ Confirmar sessão\n5️⃣ Voltar ao menu principal\n\n` +
         RESPONDA,
     );
 
   const sessaoTipoText = (): Outgoing =>
     text(
       `Qual tipo de sessão você deseja agendar?\n\n` +
-        `1️⃣ Fisioterapia\n2️⃣ Cinesioterapia\n3️⃣ Particular\n4️⃣ Pélvica\n5️⃣ Outros\n\n` +
+        `1️⃣ Fisioterapia\n2️⃣ Cinesioterapia\n3️⃣ Particular\n4️⃣ Pélvica\n5️⃣ Pilates\n6️⃣ RPG\n7️⃣ Outros\n\n` +
         RESPONDA,
     );
 
@@ -201,35 +193,18 @@ export function createBotService(deps: BotDeps = {}) {
 
   // ── Fluxo de agendamento ─────────────────────────────────────────────────
 
-  /** Depois de escolher tipo → pergunta o convênio (lista numerada). */
+  /** Depois de escolher tipo → grava o tipo e pergunta o convênio (lista numerada). */
   async function goToConvenio(conversationId: string, kind: Kind, tipo: string): Promise<Outgoing[]> {
+    await setConversationIntake(conversationId, { subtype: tipo });
     await setConversationState(conversationId, { step: 'convenio', pendingKind: kind, pendingTipo: tipo });
     return [convenioText()];
   }
 
-  /** Mostra os horários livres do profissional certo (consulta→médico, sessão→fisio). */
-  async function startScheduling(conversationId: string, kind: Kind, tipo?: string): Promise<Outgoing[]> {
-    const role = kind === 'consulta' ? 'medico' : 'fisioterapeuta';
-    const slots = await getNextFreeSlots({ count: 5, from: now(), role });
-    const tipoLabel = kind === 'consulta' ? 'consulta' : 'sessão';
-    if (slots.length === 0) {
-      await setConversationState(conversationId, {});
-      return [text(`No momento não encontrei horários livres para ${tipoLabel}. Vou te encaminhar para a recepção. 🙂`)];
-    }
-    const options: SlotOption[] = slots.map((s) => ({
-      professionalId: s.professionalId,
-      professionalName: s.professionalName,
-      atISO: s.at.toISOString(),
-    }));
-    await setConversationState(conversationId, { step: 'choosing_slot', options, pendingKind: kind, pendingTipo: tipo });
-    const lines = slots.map((s, i) => `${i + 1}) ${s.professionalName} — ${formatSlotLabel(s.at)}`).join('\n');
-    return [text(`Perfeito! Estes são os próximos horários disponíveis para *${tipoLabel}*:\n${lines}\n\n${RESPONDA}`)];
-  }
-
+  /** Transborda para a recepção com o resumo já coletado (categoria/ação/tipo/convênio). */
   async function handoffHuman(
     ctx: { conversationId: string; patientId: string; phone: string },
   ): Promise<Outgoing[]> {
-    await setConversationStatus(ctx.conversationId, 'human');
+    await markHandedOff(ctx.conversationId);
     await setConversationState(ctx.conversationId, {});
     bus.emit('conversation:status', { conversationId: ctx.conversationId, patientId: ctx.patientId, status: 'human' });
     return [text('Tudo bem! Já estou te encaminhando para a nossa recepção. 🙂')];
@@ -270,23 +245,6 @@ export function createBotService(deps: BotDeps = {}) {
     return [text(answer)];
   }
 
-  async function confirmAppointment(conversationId: string, patient: Patient, kind: Kind): Promise<Outgoing[]> {
-    const label = kind === 'consulta' ? 'consulta' : 'sessão';
-    const appt = await getNextAppointmentForPatient(patient.id, kind);
-    if (!appt) return withFollowup(conversationId, [text(`Não encontrei uma ${label} futura para confirmar. Quer agendar um horário?`)]);
-    await updateAppointmentStatus(appt.id, 'confirmed');
-    return withFollowup(conversationId, [text(`Sua ${label} de ${formatSlotLabel(new Date(appt.scheduled_at))} está confirmada! ✅`)]);
-  }
-
-  async function cancelAppointment(conversationId: string, patient: Patient, kind: Kind): Promise<Outgoing[]> {
-    const label = kind === 'consulta' ? 'consulta' : 'sessão';
-    const appt = await getNextAppointmentForPatient(patient.id, kind);
-    if (!appt) return withFollowup(conversationId, [text(`Não encontrei uma ${label} futura para cancelar.`)]);
-    await updateAppointmentStatus(appt.id, 'cancelled');
-    bus.emit('appointment:cancelled', { appointmentId: appt.id, patientId: patient.id });
-    return withFollowup(conversationId, [text(`Tudo certo, sua ${label} de ${formatSlotLabel(new Date(appt.scheduled_at))} foi cancelada. Se quiser, posso reagendar.`)]);
-  }
-
   // Mapeia uma intenção genérica (Claude) → mostra o menu principal.
   async function routeIntent(
     intent: Intent,
@@ -298,6 +256,7 @@ export function createBotService(deps: BotDeps = {}) {
   ): Promise<Outgoing[]> {
     switch (intent) {
       case 'FALAR_HUMANO':
+        await setConversationIntake(conversationId, { category: 'atendente', action: null, subtype: null });
         return handoffHuman(ctx);
       case 'DUVIDA':
         return withFollowup(conversationId, await answerFaq(msg, conversationId, configs));
@@ -341,6 +300,7 @@ export function createBotService(deps: BotDeps = {}) {
 
     // Atalho: pedir atendente a qualquer momento.
     if (HUMAN_KEYWORDS.test(body)) {
+      await setConversationIntake(convo.id, { category: 'atendente', action: null, subtype: null });
       return saveOutgoing(ctx, await handoffHuman(ctx));
     }
 
@@ -373,14 +333,17 @@ export function createBotService(deps: BotDeps = {}) {
       // ── Menu principal ──
       case 'main_menu': {
         if (n === 1) {
+          await setConversationIntake(convo.id, { category: 'consulta', action: null, subtype: null });
           await setConversationState(convo.id, { step: 'consulta_menu' });
           return saveOutgoing(ctx, [consultaMenuText()]);
         }
         if (n === 2) {
+          await setConversationIntake(convo.id, { category: 'sessao', action: null, subtype: null });
           await setConversationState(convo.id, { step: 'sessao_menu' });
           return saveOutgoing(ctx, [sessaoMenuText()]);
         }
         if (n === 3) {
+          await setConversationIntake(convo.id, { category: 'localizacao', action: null, subtype: null });
           const address = configs.clinic_address ?? 'Endereço não cadastrado.';
           const maps = configs.clinic_maps_url;
           const horario = configs.business_hours_text ??
@@ -388,20 +351,26 @@ export function createBotService(deps: BotDeps = {}) {
           const msg = `📍 *Localização*\n${address}${maps ? `\n🗺️ ${maps}` : ''}\n\n${horario}`;
           return saveOutgoing(ctx, await withFollowup(convo.id, [text(msg)]));
         }
-        if (n === 4) return saveOutgoing(ctx, await handoffHuman(ctx));
+        if (n === 4) {
+          await setConversationIntake(convo.id, { category: 'atendente', action: null, subtype: null });
+          return saveOutgoing(ctx, await handoffHuman(ctx));
+        }
         if (n === 5) return saveOutgoing(ctx, await closeByUser(ctx));
         return saveOutgoing(ctx, [text('Não entendi. 🙂'), mainMenuText(patient)]);
       }
 
       // ── Submenu Consulta ──
       case 'consulta_menu': {
-        if (n === 1) {
+        if (n === 1 || n === 2) {
+          await setConversationIntake(convo.id, { action: n === 1 ? 'agendar' : 'reagendar' });
           await setConversationState(convo.id, { step: 'consulta_tipo' });
           return saveOutgoing(ctx, [consultaTipoText()]);
         }
-        if (n === 2) return saveOutgoing(ctx, await cancelAppointment(convo.id, patient, 'consulta'));
-        if (n === 3) return saveOutgoing(ctx, await confirmAppointment(convo.id, patient, 'consulta'));
-        if (n === 4) {
+        if (n === 3 || n === 4) {
+          await setConversationIntake(convo.id, { action: n === 3 ? 'cancelar' : 'confirmar' });
+          return saveOutgoing(ctx, await handoffHuman(ctx));
+        }
+        if (n === 5) {
           await setConversationState(convo.id, { step: 'main_menu' });
           return saveOutgoing(ctx, [mainMenuText(patient)]);
         }
@@ -412,16 +381,17 @@ export function createBotService(deps: BotDeps = {}) {
       case 'consulta_tipo': {
         const tipos: Record<number, string> = {
           1: 'Primeira consulta',
-          2: 'Pós-operatório',
-          3: 'Fisiatria',
-          4: 'Medicina do Esporte',
+          2: 'Retorno',
+          3: 'Pós-operatório',
+          4: 'Fisiatria',
+          5: 'Medicina do Esporte',
         };
         if (tipos[n]) return saveOutgoing(ctx, await goToConvenio(convo.id, 'consulta', tipos[n]!));
-        if (n === 5) {
+        if (n === 6) {
           await setConversationState(convo.id, { step: 'consulta_avaliacao' });
           return saveOutgoing(ctx, [avaliacaoText()]);
         }
-        if (n === 6) {
+        if (n === 7) {
           // Outros → pede descrição
           await setConversationState(convo.id, { step: 'await_tipo_outros', pendingKind: 'consulta', pendingTipo: '' });
           return saveOutgoing(ctx, [text('Certo! Pode me dizer qual tipo de consulta você precisa? ✍️')]);
@@ -447,13 +417,16 @@ export function createBotService(deps: BotDeps = {}) {
 
       // ── Submenu Sessão ──
       case 'sessao_menu': {
-        if (n === 1) {
+        if (n === 1 || n === 2) {
+          await setConversationIntake(convo.id, { action: n === 1 ? 'agendar' : 'reagendar' });
           await setConversationState(convo.id, { step: 'sessao_tipo' });
           return saveOutgoing(ctx, [sessaoTipoText()]);
         }
-        if (n === 2) return saveOutgoing(ctx, await cancelAppointment(convo.id, patient, 'sessao'));
-        if (n === 3) return saveOutgoing(ctx, await confirmAppointment(convo.id, patient, 'sessao'));
-        if (n === 4) {
+        if (n === 3 || n === 4) {
+          await setConversationIntake(convo.id, { action: n === 3 ? 'cancelar' : 'confirmar' });
+          return saveOutgoing(ctx, await handoffHuman(ctx));
+        }
+        if (n === 5) {
           await setConversationState(convo.id, { step: 'main_menu' });
           return saveOutgoing(ctx, [mainMenuText(patient)]);
         }
@@ -467,9 +440,11 @@ export function createBotService(deps: BotDeps = {}) {
           2: 'Cinesioterapia',
           3: 'Particular',
           4: 'Pélvica',
+          5: 'Pilates',
+          6: 'RPG',
         };
         if (tipos[n]) return saveOutgoing(ctx, await goToConvenio(convo.id, 'sessao', tipos[n]!));
-        if (n === 5) {
+        if (n === 7) {
           await setConversationState(convo.id, { step: 'await_tipo_outros', pendingKind: 'sessao', pendingTipo: '' });
           return saveOutgoing(ctx, [text('Certo! Pode me dizer qual tipo de sessão você precisa? ✍️')]);
         }
@@ -484,13 +459,13 @@ export function createBotService(deps: BotDeps = {}) {
         return saveOutgoing(ctx, await goToConvenio(convo.id, kind, tipo));
       }
 
-      // ── Convênio (lista numerada) ──
+      // ── Convênio (lista numerada) → transborda para a recepção ──
       case 'convenio': {
         const kind = state.pendingKind ?? 'consulta';
         const tipo = state.pendingTipo;
         if (n >= 1 && n <= 7) {
           await updatePatientFields(patient.id, { insurance: CONVENIOS[n - 1]! });
-          return saveOutgoing(ctx, await startScheduling(convo.id, kind, tipo));
+          return saveOutgoing(ctx, await handoffHuman(ctx));
         }
         if (n === 8) {
           await setConversationState(convo.id, { step: 'await_convenio_outros', pendingKind: kind, pendingTipo: tipo });
@@ -499,42 +474,10 @@ export function createBotService(deps: BotDeps = {}) {
         return saveOutgoing(ctx, [text('Não entendi. 🙂'), convenioText()]);
       }
 
-      // ── Convênio "Outros" digitado ──
+      // ── Convênio "Outros" digitado → transborda para a recepção ──
       case 'await_convenio_outros': {
-        const kind = state.pendingKind ?? 'consulta';
-        const tipo = state.pendingTipo;
         await updatePatientFields(patient.id, { insurance: body || 'Outros' });
-        return saveOutgoing(ctx, await startScheduling(convo.id, kind, tipo));
-      }
-
-      // ── Escolha do horário ──
-      case 'choosing_slot': {
-        const options = state.options ?? [];
-        const kind = state.pendingKind ?? 'sessao';
-        const tipo = state.pendingTipo;
-        const label = kind === 'consulta' ? 'consulta' : 'sessão';
-        if (Number.isNaN(n) || n < 1 || n > options.length) {
-          return saveOutgoing(ctx, [text('Não entendi. 🙂'), ...(await startScheduling(convo.id, kind, tipo))]);
-        }
-        const choice = options[n - 1]!;
-        const at = new Date(choice.atISO);
-        const res = await scheduleIfFree(patient.id, choice.professionalId, at, kind);
-        if (res.ok) {
-          bus.emit('appointment:created', {
-            appointmentId: res.appointment.id,
-            patientId: patient.id,
-            professionalId: res.appointment.professional_id,
-            scheduledAt: res.appointment.scheduled_at,
-          });
-          const tipoTxt = tipo ? ` (${tipo})` : '';
-          return saveOutgoing(ctx, await withFollowup(convo.id, [
-            text(`Pronto! ✅ Sua ${label}${tipoTxt} foi agendada com ${choice.professionalName} em ${formatSlotLabel(at)}. Até lá!`),
-          ]));
-        }
-        return saveOutgoing(ctx, [
-          text(`Ah, o horário ${formatSlotLabel(at)} acabou de ser ocupado. 😕`),
-          ...(await startScheduling(convo.id, kind, tipo)),
-        ]);
+        return saveOutgoing(ctx, await handoffHuman(ctx));
       }
 
       // ── Dúvida aberta (FAQ via texto livre) ──
