@@ -89,7 +89,26 @@ export const api = {
   createAppointment: (input: { professionalId: string; scheduledAt: string; phone: string; name?: string }) =>
     request<{ ok: boolean }>('/api/appointments', { method: 'POST', body: JSON.stringify(input) }),
 
-  getDashboard: (range: string) => request<DashboardData>(`/api/dashboard?range=${range}`),
+  getDashboard: (params: { month: string; group: 'day' | 'week' }) =>
+    request<DashboardData>(`/api/dashboard?month=${params.month}&group=${params.group}`),
+
+  // Baixa o CSV do período (usa o token; dispara download via blob).
+  exportDashboardCsv: async (month: string, kind: 'conversations' | 'agents'): Promise<void> => {
+    const token = auth.getToken();
+    const res = await fetch(`${API_URL}/api/dashboard/export?month=${month}&kind=${kind}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error(`Erro ${res.status} ao exportar`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${kind === 'agents' ? 'atendentes' : 'conversas'}-${month}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
 
   getDemoScenarios: () =>
     request<{ scenarios: Array<{ id: string; label: string }> }>('/api/demo/scenarios').then((r) => r.scenarios),
