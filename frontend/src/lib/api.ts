@@ -58,7 +58,7 @@ export const api = {
 
   me: () => request<{ user: AuthUser }>('/api/auth/me').then((r) => r.user),
 
-  listConversations: (filter: 'active' | 'finalized' = 'active') =>
+  listConversations: (filter: 'active' | 'finalized' | 'unread' = 'active') =>
     request<{ conversations: ConversationListItem[] }>(`/api/conversations?filter=${filter}`).then((r) => r.conversations),
 
   getMessages: (id: string) =>
@@ -71,6 +71,8 @@ export const api = {
   release: (id: string) => request<{ ok: boolean }>(`/api/conversations/${id}/release`, { method: 'POST' }),
 
   close: (id: string) => request<{ ok: boolean }>(`/api/conversations/${id}/close`, { method: 'POST' }),
+
+  markRead: (id: string) => request<{ ok: boolean }>(`/api/conversations/${id}/read`, { method: 'POST' }),
 
   sendMessage: (id: string, text: string) =>
     request<{ ok: boolean; message: Message }>(`/api/conversations/${id}/messages`, {

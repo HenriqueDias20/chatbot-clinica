@@ -19,6 +19,12 @@ function attendantWaitingMin(c: ConversationListItem, nowMs: number): number | n
   const diff = nowMs - new Date(c.last_message_at).getTime();
   return Math.max(0, Math.floor(diff / 60000));
 }
+
+// Não lida: ativa, última mensagem do cliente, e ainda não aberta desde então.
+function isUnread(c: ConversationListItem): boolean {
+  if (c.status === 'closed' || c.last_role !== 'user' || !c.last_message_at) return false;
+  return !c.last_read_at || new Date(c.last_read_at).getTime() < new Date(c.last_message_at).getTime();
+}
 function fmtTime(iso: string | null): string {
   if (!iso) return '';
   return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
@@ -46,6 +52,20 @@ function apptStatusColor(s: string): string {
   return 'text-slate-500';
 }
 
+// Rótulos amigáveis para o "Resumo do pedido".
+const CATEGORY_LABELS: Record<string, string> = {
+  consulta: 'Consulta',
+  sessao: 'Sessão',
+  localizacao: 'Localização / Horário',
+  atendente: 'Falar com atendente',
+};
+const ACTION_LABELS: Record<string, string> = {
+  agendar: 'Agendar',
+  reagendar: 'Reagendar',
+  cancelar: 'Cancelar',
+  confirmar: 'Confirmar',
+};
+
 export default function Conversas() {
   const qc = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -53,7 +73,7 @@ export default function Conversas() {
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState<'info' | 'hist'>('info');
   const [emojiOpen, setEmojiOpen] = useState(false);
-  const [listFilter, setListFilter] = useState<'active' | 'finalized'>('active');
+  const [listFilter, setListFilter] = useState<'active' | 'unread' | 'finalized'>('active');
   const [typing, setTyping] = useState<{ conversationId: string; role: 'user' | 'assistant' } | null>(null);
   const [nowMs, setNowMs] = useState(Date.now());
   const [demoMenuOpen, setDemoMenuOpen] = useState(false);
@@ -143,6 +163,24 @@ export default function Conversas() {
     },
   });
 
+  // Contador da aba "Não lidas" (consulta leve, independente da aba aberta).
+  const unreadQuery = useQuery({
+    queryKey: ['conversations', 'unread-count'],
+    queryFn: () => api.listConversations('unread'),
+    refetchInterval: 20_000,
+  });
+  const unreadCount = unreadQuery.data?.length ?? 0;
+
+  const markReadMut = useMutation({
+    mutationFn: api.markRead,
+    // Só atualiza o contador; não recarrega a lista aberta (a conversa não "some" enquanto você lê).
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['conversations', 'unread-count'] }),
+  });
+  function openConversation(id: string) {
+    setSelectedId(id);
+    markReadMut.mutate(id);
+  }
+
   const allRaw = conversationsQuery.data ?? [];
   const conversations = allRaw.filter((c) => {
     const q = search.trim().toLowerCase();
@@ -217,7 +255,7 @@ export default function Conversas() {
             />
           </div>
           <div className="mt-3 flex rounded-xl bg-slate-100 p-0.5 text-xs font-medium">
-            {(['active', 'finalized'] as const).map((f) => (
+            {(['active', 'unread', 'finalized'] as const).map((f) => (
               <button
                 key={f}
                 onClick={() => {
@@ -228,7 +266,12 @@ export default function Conversas() {
                   listFilter === f ? 'bg-white text-petroleum-700 shadow-soft' : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
-                {f === 'active' ? 'Ativas' : 'Finalizadas'}
+                {f === 'active' ? 'Ativas' : f === 'unread' ? 'Não lidas' : 'Finalizadas'}
+                {f === 'unread' && unreadCount > 0 && (
+                  <span className="ml-1 inline-flex min-w-[1.1rem] justify-center rounded-full bg-rose-500 px-1 py-px text-[10px] font-semibold text-white">
+                    {unreadCount}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -244,7 +287,8 @@ export default function Conversas() {
               c={c}
               active={selectedId === c.id}
               waitingMin={attendantWaitingMin(c, nowMs)}
-              onClick={() => setSelectedId(c.id)}
+              unread={isUnread(c)}
+              onClick={() => openConversation(c.id)}
             />
           ))}
         </div>
@@ -262,7 +306,7 @@ export default function Conversas() {
               <p className="mt-1 max-w-xs text-sm text-slate-400">Selecione um atendimento encerrado na lista para consultar o histórico completo.</p>
             </div>
           ) : (
-            <EmptyState conversations={allRaw} onSelect={setSelectedId} />
+            <EmptyState conversations={allRaw} onSelect={openConversation} />
           )
         ) : (
           <>
@@ -430,14 +474,29 @@ export default function Conversas() {
           </div>
           <div className="flex-1 overflow-y-auto p-5">
             {tab === 'info' && contact && (
-              <dl className="space-y-3.5 text-sm">
-                <Field label="Nome completo" value={contact.name ?? '—'} />
-                <Field label="Telefone" value={contact.phone} />
-                <Field label="CPF" value={fmtCpf(contact.cpf)} />
-                <Field label="Nascimento" value={fmtDate(contact.birth_date)} />
-                <Field label="Convênio" value={contact.insurance ?? '—'} />
-                <Field label="Paciente desde" value={new Date(contact.patient_created_at).toLocaleDateString('pt-BR')} />
-              </dl>
+              <div className="space-y-4">
+                {contact.category && (
+                  <div className="rounded-xl border border-petroleum-100 bg-petroleum-50/60 p-3">
+                    <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-petroleum-700">
+                      <IconClipboard /> Resumo do pedido
+                    </div>
+                    <dl className="space-y-1.5 text-sm">
+                      <SummaryRow label="Assunto" value={CATEGORY_LABELS[contact.category] ?? contact.category} />
+                      {contact.action && <SummaryRow label="Ação" value={ACTION_LABELS[contact.action] ?? contact.action} />}
+                      {contact.subtype && <SummaryRow label="Tipo" value={contact.subtype} />}
+                      {contact.insurance && <SummaryRow label="Convênio" value={contact.insurance} />}
+                    </dl>
+                  </div>
+                )}
+                <dl className="space-y-3.5 text-sm">
+                  <Field label="Nome completo" value={contact.name ?? '—'} />
+                  <Field label="Telefone" value={contact.phone} />
+                  <Field label="CPF" value={fmtCpf(contact.cpf)} />
+                  <Field label="Nascimento" value={fmtDate(contact.birth_date)} />
+                  <Field label="Convênio" value={contact.insurance ?? '—'} />
+                  <Field label="Paciente desde" value={new Date(contact.patient_created_at).toLocaleDateString('pt-BR')} />
+                </dl>
+              </div>
             )}
             {tab === 'hist' && (
               <div className="space-y-2">
@@ -473,11 +532,13 @@ function ConversationRow({
   c,
   active,
   waitingMin,
+  unread,
   onClick,
 }: {
   c: ConversationListItem;
   active: boolean;
   waitingMin: number | null;
+  unread: boolean;
   onClick: () => void;
 }) {
   const badge = statusBadge(c);
@@ -495,9 +556,14 @@ function ConversationRow({
           <span className={`truncate text-sm font-semibold ${active ? 'text-petroleum-800' : late ? 'text-rose-700' : 'text-slate-800'}`}>
             {c.name ?? c.phone}
           </span>
-          <span className={`flex-shrink-0 text-[11px] ${late ? 'font-semibold text-rose-500' : 'text-slate-400'}`}>{fmtTime(c.last_message_at)}</span>
+          <span className="flex flex-shrink-0 items-center gap-1">
+            {unread && !late && <span className="h-2 w-2 rounded-full bg-sky-500" title="Não lida" />}
+            <span className={`text-[11px] ${late ? 'font-semibold text-rose-500' : unread ? 'font-semibold text-slate-600' : 'text-slate-400'}`}>
+              {fmtTime(c.last_message_at)}
+            </span>
+          </span>
         </div>
-        <div className="mt-0.5 truncate text-xs text-slate-500">{c.last_message ?? '—'}</div>
+        <div className={`mt-0.5 truncate text-xs ${unread ? 'font-semibold text-slate-700' : 'text-slate-500'}`}>{c.last_message ?? '—'}</div>
         <div className="mt-1 flex flex-wrap items-center gap-1">
           {late && (
             <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">
@@ -646,6 +712,15 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <dt className="text-slate-500">{label}</dt>
+      <dd className="truncate font-medium text-slate-800">{value}</dd>
+    </div>
+  );
+}
+
 const sp = {
   viewBox: '0 0 24 24',
   fill: 'none',
@@ -669,3 +744,4 @@ const IconUser = ({ className = 'h-3 w-3' }: { className?: string }) => (<svg {.
 const IconPlay = () => (<svg viewBox="0 0 24 24" fill="currentColor" className="h-3 w-3"><path d="M8 5v14l11-7z" /></svg>);
 const IconChevron = ({ open }: { open: boolean }) => (<svg {...sp} className={`h-3 w-3 transition-transform ${open ? 'rotate-180' : ''}`}><path d="m6 9 6 6 6-6" /></svg>);
 const IconTrash = () => (<svg {...sp} className="h-3.5 w-3.5"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M10 11v6M14 11v6" /></svg>);
+const IconClipboard = () => (<svg {...sp} className="h-3.5 w-3.5"><rect x="8" y="2" width="8" height="4" rx="1" /><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><path d="M9 12h6M9 16h4" /></svg>);

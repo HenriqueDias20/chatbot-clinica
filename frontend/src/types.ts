@@ -13,6 +13,10 @@ export interface ConversationListItem {
   assigned_user_id: string | null;
   assigned_user_name: string | null;
   assigned_at: string | null;
+  category: string | null;
+  action: string | null;
+  subtype: string | null;
+  last_read_at: string | null;
 }
 
 export interface Message {
@@ -35,6 +39,10 @@ export interface ConversationDetail {
   patient_created_at: string;
   assigned_user_name: string | null;
   assigned_at: string | null;
+  category: string | null;
+  action: string | null;
+  subtype: string | null;
+  handed_off_at: string | null;
 }
 
 export interface PatientAppointment {
