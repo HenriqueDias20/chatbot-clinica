@@ -543,17 +543,23 @@ function ConversationRow({
 }) {
   const badge = statusBadge(c);
   const late = waitingMin !== null;
-  const border = active ? 'border-petroleum-500' : late ? 'border-rose-500' : 'border-transparent';
-  const bg = active ? 'bg-petroleum-50 shadow-soft' : late ? 'bg-rose-50 hover:bg-rose-100/70' : 'hover:bg-slate-100/70';
+  // Transbordada (precisa de atendente) → destaca a LINHA inteira em vermelho.
+  const needsAttendant = c.status === 'human';
+  const border = active ? 'border-petroleum-500' : needsAttendant ? 'border-rose-500' : 'border-transparent';
+  const bg = active
+    ? 'bg-petroleum-50 shadow-soft'
+    : needsAttendant
+      ? 'bg-rose-50 ring-1 ring-rose-200 hover:bg-rose-100/70'
+      : 'hover:bg-slate-100/70';
   return (
     <button
       onClick={onClick}
       className={`mb-1 flex w-full items-start gap-3 rounded-xl border-l-[3px] px-3 py-3 text-left transition-all ${border} ${bg}`}
     >
-      <Avatar name={c.name} phone={c.phone} size={10} dot={late ? 'bg-rose-500' : badge.dot} />
+      <Avatar name={c.name} phone={c.phone} size={10} dot={needsAttendant ? 'bg-rose-500' : badge.dot} />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
-          <span className={`truncate text-sm font-semibold ${active ? 'text-petroleum-800' : late ? 'text-rose-700' : 'text-slate-800'}`}>
+          <span className={`truncate text-sm font-semibold ${active ? 'text-petroleum-800' : needsAttendant ? 'text-rose-700' : 'text-slate-800'}`}>
             {c.name ?? c.phone}
           </span>
           <span className="flex flex-shrink-0 items-center gap-1">
@@ -575,9 +581,9 @@ function ConversationRow({
             </span>
           )}
           {c.status === 'human' && (
-            <span className={`inline-flex max-w-full items-center gap-1 truncate rounded-full px-1.5 py-0.5 text-[10px] font-medium ${badge.chip}`}>
+            <span className="inline-flex max-w-full items-center gap-1 truncate rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
               <IconUser className="h-2.5 w-2.5" />
-              {c.assigned_user_name ?? 'Atendente'}
+              {c.assigned_user_name ?? 'Precisa de atendente'}
             </span>
           )}
         </div>
