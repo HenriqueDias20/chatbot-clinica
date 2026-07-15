@@ -13,6 +13,10 @@ export interface ConversationListItem {
   assigned_user_id: string | null;
   assigned_user_name: string | null;
   assigned_at: string | null;
+  category: string | null;
+  action: string | null;
+  subtype: string | null;
+  last_read_at: string | null;
 }
 
 export interface Message {
@@ -35,6 +39,10 @@ export interface ConversationDetail {
   patient_created_at: string;
   assigned_user_name: string | null;
   assigned_at: string | null;
+  category: string | null;
+  action: string | null;
+  subtype: string | null;
+  handed_off_at: string | null;
 }
 
 export interface PatientAppointment {
@@ -65,25 +73,34 @@ export interface ProfessionalDaySchedule {
 }
 
 export interface DashboardData {
-  range: string;
-  since: string;
-  conversations: { active: number; waitingHuman: number };
-  appointments: {
+  month: string;
+  group: 'day' | 'week';
+  cards: {
     total: number;
-    confirmed: number;
-    pending: number;
-    cancelled: number;
-    completed: number;
-    no_show: number;
+    resolvedByBot: number;
+    resolvedByBotPct: number;
+    handedOff: number;
+    handedOffPct: number;
+    avgResponseSeconds: number;
+    waitingNow: number;
   };
-  series: Array<{ date: string; count: number }>;
-  confirmationRate: number;
-  avgPerDay: number;
-  todayAppointments: Array<{
-    id: string;
-    scheduledAt: string;
-    status: string;
-    patientName: string;
-    professionalName: string;
+  series: Array<{ bucket: string; count: number }>;
+  byCategory: Array<{ category: string; count: number }>;
+  bySubcategory: Array<{ category: string; action: string; count: number }>;
+  byAgent: Array<{
+    userId: string;
+    name: string;
+    handled: number;
+    avgFirstResponseSeconds: number;
+    avgDurationSeconds: number;
+    finalized: number;
+  }>;
+  byClient: Array<{
+    patientId: string;
+    name: string | null;
+    phone: string;
+    conversations: number;
+    topCategory: string | null;
+    lastContact: string | null;
   }>;
 }

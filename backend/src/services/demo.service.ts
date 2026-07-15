@@ -1,6 +1,6 @@
 import { query } from '../db/pool.js';
 import { findOrCreatePatient, updatePatientFields } from '../repositories/patient.repo.js';
-import { getOrCreateActiveConversation, setConversationStatus } from '../repositories/conversation.repo.js';
+import { getOrCreateActiveConversation, setConversationIntake, markHandedOff } from '../repositories/conversation.repo.js';
 import { saveMessage } from '../repositories/message.repo.js';
 import { bus } from '../lib/events.js';
 import { logger } from '../lib/logger.js';
@@ -38,16 +38,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-/** Próximo dia útil às 10:00, formatado em pt-BR (para o roteiro parecer atual). */
-function nextWeekdayLabel(): string {
-  const d = new Date();
-  d.setHours(10, 0, 0, 0);
-  do {
-    d.setDate(d.getDate() + 1);
-  } while (d.getDay() === 0 || d.getDay() === 6);
-  return d.toLocaleString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-}
-
 const u = (text: string): Turn => ({ role: 'user', text, typing: 1 });
 const b = (text: string): Turn => ({ role: 'assistant', text, typing: 1 });
 const RESPONDA = 'Responda apenas com o número da opção desejada.';
@@ -70,19 +60,18 @@ function greeting(nome: string): Turn[] {
     ),
   ];
 }
-const mainMenuOnly = (nome: string): Turn => greeting(nome)[1]!;
 
 const consultaMenu = b(
-  '*Consulta* — o que você deseja?\n\n1️⃣ Agendar consulta\n2️⃣ Cancelar consulta\n3️⃣ Confirmar consulta\n4️⃣ Voltar ao menu principal\n\n' + RESPONDA,
+  '*Consulta* — o que você deseja?\n\n1️⃣ Agendar consulta\n2️⃣ Reagendar consulta\n3️⃣ Cancelar consulta\n4️⃣ Confirmar consulta\n5️⃣ Voltar ao menu principal\n\n' + RESPONDA,
 );
 const sessaoMenu = b(
-  '*Sessão* — o que você deseja?\n\n1️⃣ Agendar sessão\n2️⃣ Cancelar sessão\n3️⃣ Confirmar sessão\n4️⃣ Voltar ao menu principal\n\n' + RESPONDA,
+  '*Sessão* — o que você deseja?\n\n1️⃣ Agendar sessão\n2️⃣ Reagendar sessão\n3️⃣ Cancelar sessão\n4️⃣ Confirmar sessão\n5️⃣ Voltar ao menu principal\n\n' + RESPONDA,
 );
 const consultaTipos = b(
-  'Qual tipo de consulta você deseja agendar?\n\n1️⃣ Primeira consulta\n2️⃣ Pós-operatório\n3️⃣ Fisiatria\n4️⃣ Medicina do Esporte\n5️⃣ Avaliação\n6️⃣ Outros\n\n' + RESPONDA,
+  'Qual tipo de consulta você deseja agendar?\n\n1️⃣ Primeira consulta\n2️⃣ Retorno\n3️⃣ Pós-operatório\n4️⃣ Fisiatria\n5️⃣ Medicina do Esporte\n6️⃣ Avaliação\n7️⃣ Outros\n\n' + RESPONDA,
 );
 const sessaoTipos = b(
-  'Qual tipo de sessão você deseja agendar?\n\n1️⃣ Fisioterapia\n2️⃣ Cinesioterapia\n3️⃣ Particular\n4️⃣ Pélvica\n5️⃣ Outros\n\n' + RESPONDA,
+  'Qual tipo de sessão você deseja agendar?\n\n1️⃣ Fisioterapia\n2️⃣ Cinesioterapia\n3️⃣ Particular\n4️⃣ Pélvica\n5️⃣ Pilates\n6️⃣ RPG\n7️⃣ Outros\n\n' + RESPONDA,
 );
 const convenioMenu = b(
   'Para direcionar corretamente, qual é o seu convênio?\n\n1️⃣ Particular\n2️⃣ Cabergs\n3️⃣ Unimed\n4️⃣ Saúde Caixa\n5️⃣ Amil\n6️⃣ Geap\n7️⃣ Ipê Saúde\n8️⃣ Outros\n\n' + RESPONDA,
@@ -91,9 +80,19 @@ const convenioMenu = b(
 const FOLLOWUP = 'Deseja fazer mais alguma coisa?\n\n1️⃣ Voltar ao menu principal\n2️⃣ Encerrar atendimento';
 const ENCERRAR = 'Atendimento encerrado. 🙂 Sempre que precisar, é só enviar uma nova mensagem!';
 
+/** Mensagem de transbordo (o bot coletou a triagem e encaminha para a recepção; conversa vira 'human'). */
+const transbordo: Turn = {
+  role: 'assistant',
+  typing: 1,
+  status: 'human',
+  text: 'Tudo bem! Já tenho o que preciso. 🙂 Vou te encaminhar para a nossa recepção finalizar.',
+};
+
 interface Scenario {
   id: string;
   label: string;
+  /** Assunto principal gravado na conversa (aparece no dashboard). */
+  intake: { category: string; action?: string; subtype?: string };
   build: (persona: Persona) => Turn[];
 }
 
@@ -101,8 +100,8 @@ export const SCENARIOS: Scenario[] = [
   {
     id: 'agendar_consulta',
     label: 'Consulta · Agendar (Primeira consulta)',
+    intake: { category: 'consulta', action: 'agendar', subtype: 'Primeira consulta' },
     build: (p) => {
-      const quando = nextWeekdayLabel();
       const nome = p.name.split(' ')[0]!;
       return [
         ...greeting(nome),
@@ -110,19 +109,16 @@ export const SCENARIOS: Scenario[] = [
         u('1'), consultaTipos,
         u('1'), convenioMenu,
         ...convenioTurns(p),
-        b(`Perfeito! Estes são os próximos horários disponíveis para *consulta*:\n1) Dr. Bruno Lima — ${quando}\n2) Dr. Bruno Lima — sex., 26/06 às 14:00\n\n${RESPONDA}`),
-        u('1'),
-        b(`Pronto! ✅ Sua consulta (Primeira consulta) foi agendada com Dr. Bruno Lima em ${quando}. Até lá!`),
-        b(FOLLOWUP),
-        u('2'), b(ENCERRAR),
+        transbordo,
+        u('Perfeito, obrigado! 🙏'),
       ];
     },
   },
   {
     id: 'agendar_sessao',
     label: 'Sessão · Agendar (Fisioterapia)',
+    intake: { category: 'sessao', action: 'agendar', subtype: 'Fisioterapia' },
     build: (p) => {
-      const quando = nextWeekdayLabel();
       const nome = p.name.split(' ')[0]!;
       return [
         ...greeting(nome),
@@ -130,71 +126,64 @@ export const SCENARIOS: Scenario[] = [
         u('1'), sessaoTipos,
         u('1'), convenioMenu,
         ...convenioTurns(p),
-        b(`Perfeito! Estes são os próximos horários disponíveis para *sessão*:\n1) Dra. Ana Souza — ${quando}\n2) Dra. Carla Mendes — sex., 26/06 às 15:00\n\n${RESPONDA}`),
-        u('1'),
-        b(`Pronto! ✅ Sua sessão (Fisioterapia) foi agendada com Dra. Ana Souza em ${quando}. Até lá!`),
-        b(FOLLOWUP),
-        u('1'), mainMenuOnly(nome),
+        transbordo,
+        u('Combinado, fico no aguardo! 🙂'),
       ];
     },
   },
   {
     id: 'consulta_avaliacao',
     label: 'Consulta · Avaliação (Antropometria)',
+    intake: { category: 'consulta', action: 'agendar', subtype: 'Avaliação — Antropometria' },
     build: (p) => {
-      const quando = nextWeekdayLabel();
       const nome = p.name.split(' ')[0]!;
       return [
         ...greeting(nome),
         u('1'), consultaMenu,
         u('1'), consultaTipos,
-        u('5'),
+        u('6'),
         b('*Avaliação* — qual tipo?\n\n1️⃣ Antropometria\n2️⃣ Baropodometria\n3️⃣ Ergoespirometria\n4️⃣ FMS\n5️⃣ Outros\n\n' + RESPONDA),
         u('1'), convenioMenu,
         ...convenioTurns(p),
-        b(`Perfeito! Estes são os próximos horários disponíveis para *consulta*:\n1) Dr. Bruno Lima — ${quando}\n\n${RESPONDA}`),
-        u('1'),
-        b(`Pronto! ✅ Sua consulta (Avaliação — Antropometria) foi agendada com Dr. Bruno Lima em ${quando}. Até lá!`),
-        b(FOLLOWUP),
-        u('2'), b(ENCERRAR),
+        transbordo,
+        u('Ótimo, obrigada! 🙏'),
       ];
     },
   },
   {
     id: 'confirmar_consulta',
     label: 'Consulta · Confirmar',
+    intake: { category: 'consulta', action: 'confirmar' },
     build: (p) => {
-      const quando = nextWeekdayLabel();
       const nome = p.name.split(' ')[0]!;
       return [
         ...greeting(nome),
         u('1'), consultaMenu,
-        u('3'),
-        b(`Sua consulta de ${quando} está confirmada! ✅`),
-        b(FOLLOWUP),
-        u('2'), b(ENCERRAR),
+        u('4'),
+        transbordo,
+        u('Só queria confirmar mesmo, obrigado!'),
       ];
     },
   },
   {
     id: 'cancelar_sessao',
     label: 'Sessão · Cancelar',
+    intake: { category: 'sessao', action: 'cancelar' },
     build: (p) => {
-      const quando = nextWeekdayLabel();
       const nome = p.name.split(' ')[0]!;
       return [
         ...greeting(nome),
         u('2'), sessaoMenu,
-        u('2'),
-        b(`Tudo certo, sua sessão de ${quando} foi cancelada. Se quiser, posso reagendar.`),
-        b(FOLLOWUP),
-        u('2'), b(ENCERRAR),
+        u('3'),
+        transbordo,
+        u('Preciso cancelar a de amanhã, por favor.'),
       ];
     },
   },
   {
     id: 'localizacao',
     label: 'Localização / Horário',
+    intake: { category: 'localizacao' },
     build: (p) => {
       const nome = p.name.split(' ')[0]!;
       return [
@@ -209,12 +198,13 @@ export const SCENARIOS: Scenario[] = [
   {
     id: 'falar_atendente',
     label: 'Falar com atendente (transbordo)',
+    intake: { category: 'atendente' },
     build: (p) => {
       const nome = p.name.split(' ')[0]!;
       return [
         ...greeting(nome),
         u('4'),
-        { role: 'assistant', typing: 1, status: 'human', text: 'Tudo bem! Já estou te encaminhando para a nossa recepção. 🙂' },
+        transbordo,
         u('Oi, preciso de ajuda com o meu convênio, por favor.'),
       ];
     },
@@ -247,7 +237,14 @@ export async function startDemoConversation(scenarioId?: string): Promise<{ conv
   await query(`update patients set is_demo = true where id = $1`, [patient.id]);
   const convo = await getOrCreateActiveConversation(patient.id);
 
-  const script = getScenario(scenarioId).build(persona);
+  const scenario = getScenario(scenarioId);
+  // Grava o assunto principal (para o dashboard) já no início.
+  await setConversationIntake(convo.id, {
+    category: scenario.intake.category,
+    action: scenario.intake.action ?? null,
+    subtype: scenario.intake.subtype ?? null,
+  });
+  const script = scenario.build(persona);
 
   // Status atual da conversa (para detectar quando um atendente assume / encerra).
   const currentStatus = async (): Promise<string> => {
@@ -286,7 +283,7 @@ export async function startDemoConversation(scenarioId?: string): Promise<{ conv
           at: saved.created_at,
         });
         if (turn.status === 'human') {
-          await setConversationStatus(convo.id, 'human');
+          await markHandedOff(convo.id);
           handedOff = true;
           bus.emit('conversation:status', { conversationId: convo.id, patientId: patient.id, status: 'human' });
         }
