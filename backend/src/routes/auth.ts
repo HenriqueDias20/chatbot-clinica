@@ -32,6 +32,16 @@ export async function authenticate(req: FastifyRequest, reply: FastifyReply): Pr
   req.user = toPublicUser(user);
 }
 
+/**
+ * Bloqueia papéis restritos (atendente = só Conversas). Usar como preHandler
+ * DEPOIS de `authenticate` nas rotas de Agenda e Dashboard.
+ */
+export async function requireFullAccess(req: FastifyRequest, reply: FastifyReply): Promise<void> {
+  if (req.user?.role === 'atendente') {
+    return reply.code(403).send({ error: 'Sem permissão para acessar esta área.' });
+  }
+}
+
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   // Login → devolve token + dados do usuário.
   app.post<{ Body: { email?: string; password?: string } }>('/api/auth/login', async (req, reply) => {

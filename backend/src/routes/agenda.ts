@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { requireFullAccess } from './auth.js';
 import { listActiveProfessionals } from '../repositories/professional.repo.js';
 import { findOrCreatePatient } from '../repositories/patient.repo.js';
 import { getDaySchedule, scheduleIfFree } from '../services/agenda.service.js';
@@ -15,6 +16,7 @@ function parseDate(raw: string | undefined): Date {
 
 export async function agendaRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', app.authenticate);
+  app.addHook('preHandler', requireFullAccess); // atendente não acessa a agenda
 
   // Profissionais ativos.
   app.get('/api/professionals', async () => {

@@ -46,7 +46,7 @@ export interface AuthUser {
   id: string;
   name: string;
   email: string;
-  role: 'recepcao' | 'admin';
+  role: 'recepcao' | 'admin' | 'atendente';
 }
 
 export const api = {
