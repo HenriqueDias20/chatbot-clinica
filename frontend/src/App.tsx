@@ -58,10 +58,10 @@ function IconLogout() {
   );
 }
 
-const navItems: Array<{ to: string; label: string; icon: ReactNode }> = [
+const navItems: Array<{ to: string; label: string; icon: ReactNode; fullOnly?: boolean }> = [
   { to: '/conversas', label: 'Conversas', icon: <IconChat /> },
-  { to: '/agenda', label: 'Agenda', icon: <IconCalendar /> },
-  { to: '/dashboard', label: 'Dashboard', icon: <IconChart /> },
+  { to: '/agenda', label: 'Agenda', icon: <IconCalendar />, fullOnly: true },
+  { to: '/dashboard', label: 'Dashboard', icon: <IconChart />, fullOnly: true },
 ];
 
 export default function App() {
@@ -75,6 +75,9 @@ export default function App() {
   if (!user) {
     return <Login />;
   }
+
+  const isAtendente = user.role === 'atendente';
+  const visibleNav = navItems.filter((i) => !i.fullOnly || !isAtendente);
 
   const userInitials = user.name
     .trim()
@@ -110,7 +113,7 @@ export default function App() {
         {/* Menu */}
         <nav className="flex-1 space-y-1 px-3">
           <p className="px-3 pb-1.5 pt-1 text-[11px] font-semibold uppercase tracking-wider text-petroleum-400">Menu</p>
-          {navItems.map((item) => (
+          {visibleNav.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -137,7 +140,7 @@ export default function App() {
             <div className="min-w-0 flex-1 leading-tight">
               <div className="truncate text-sm font-semibold text-white">{user.name}</div>
               <div className="truncate text-[11px] text-petroleum-300">
-                {user.role === 'admin' ? 'Administrador' : 'Recepção'}
+                {user.role === 'admin' ? 'Administrador' : user.role === 'atendente' ? 'Atendente' : 'Recepção'}
               </div>
             </div>
             <button
@@ -162,8 +165,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/conversas" replace />} />
           <Route path="/conversas" element={<Conversas />} />
-          <Route path="/agenda" element={<Agenda />} />
-          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/agenda" element={isAtendente ? <Navigate to="/conversas" replace /> : <Agenda />} />
+          <Route path="/dashboard" element={isAtendente ? <Navigate to="/conversas" replace /> : <Dashboard />} />
         </Routes>
       </main>
     </div>

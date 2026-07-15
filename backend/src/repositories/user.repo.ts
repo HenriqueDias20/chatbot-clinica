@@ -1,6 +1,6 @@
 import { query } from '../db/pool.js';
 
-export type UserRole = 'recepcao' | 'admin';
+export type UserRole = 'recepcao' | 'admin' | 'atendente';
 
 export interface User {
   id: string;

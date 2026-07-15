@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { env } from '../config/env.js';
+import { requireFullAccess } from './auth.js';
 import { getConversationCounts } from '../repositories/conversation.repo.js';
 import {
   getConversationCards,
@@ -89,6 +90,7 @@ function toCsv(headers: string[], rows: Array<Array<string | number>>): string {
 
 export async function dashboardRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', app.authenticate);
+  app.addHook('preHandler', requireFullAccess); // atendente não acessa o dashboard
 
   // Relatório de conversas do período (mês) agrupado por dia ou semana.
   app.get<{ Querystring: { month?: string; group?: string } }>('/api/dashboard', async (req) => {
