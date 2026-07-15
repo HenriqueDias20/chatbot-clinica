@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { socket } from '../lib/socket';
@@ -79,6 +80,15 @@ export default function Conversas() {
   const [demoMenuOpen, setDemoMenuOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const location = useLocation();
+
+  // Clique na marca (topo) → volta à tela inicial: Conversas ativas, sem seleção.
+  useEffect(() => {
+    if ((location.state as { home?: number } | null)?.home) {
+      setSelectedId(null);
+      setListFilter('active');
+    }
+  }, [location.state]);
 
   const conversationsQuery = useQuery({
     queryKey: ['conversations', listFilter],
