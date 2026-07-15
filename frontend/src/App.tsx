@@ -1,4 +1,4 @@
-import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
+import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import Conversas from './pages/Conversas';
 import Agenda from './pages/Agenda';
@@ -68,6 +68,7 @@ export default function App() {
   const { user, loading, logout } = useAuth();
   useRealtime();
   const connected = useSocketStatus();
+  const navigate = useNavigate();
 
   if (loading) {
     return <div className="flex h-full items-center justify-center bg-surface text-sm text-slate-400">Carregando...</div>;
@@ -90,8 +91,12 @@ export default function App() {
   return (
     <div className="flex h-full bg-surface">
       <aside className="flex w-64 flex-col bg-gradient-to-b from-petroleum-900 to-petroleum-950 text-petroleum-100">
-        {/* Marca */}
-        <div className="flex items-center gap-3 px-5 pb-5 pt-6">
+        {/* Marca — clique volta à Central de Atendimento (Conversas, sem seleção) */}
+        <button
+          onClick={() => navigate('/conversas', { state: { home: Date.now() } })}
+          title="Voltar à Central de Atendimento"
+          className="flex w-full items-center gap-3 px-5 pb-5 pt-6 text-left transition hover:opacity-90"
+        >
           <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-petroleum-500/20 text-emerald-300 ring-1 ring-white/10">
             <IconPulse />
           </div>
@@ -99,7 +104,7 @@ export default function App() {
             <div className="text-[15px] font-semibold text-white">Clínica Fisioterapia</div>
             <div className="text-xs text-petroleum-300">Central de Atendimento</div>
           </div>
-        </div>
+        </button>
 
         {/* Status tempo real */}
         <div className="mx-4 mb-5 flex items-center gap-2 rounded-xl bg-white/5 px-3 py-2 ring-1 ring-white/5">
