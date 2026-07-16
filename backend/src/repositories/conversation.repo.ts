@@ -122,13 +122,14 @@ export async function getConversationWithPatient(id: string): Promise<Conversati
 }
 
 export async function setConversationStatus(id: string, status: ConversationStatus): Promise<void> {
-  // Ao fechar, carimba closed_at (uma vez) — alimenta a métrica de duração do dashboard.
-  await query(
-    `update conversations set status = $2,
-       closed_at = case when $2 = 'closed' then coalesce(closed_at, now()) else closed_at end
-     where id = $1`,
-    [id, status],
-  );
+  // IMPORTANTE: não reutilizar o parâmetro $2 dentro de um CASE/comparação junto com
+  // "status = $2" — o Postgres não deduz o tipo do parâmetro e a query dá 500.
+  // Dois updates simples (padrão que já funcionava) resolvem.
+  await query(`update conversations set status = $2 where id = $1`, [id, status]);
+  if (status === 'closed') {
+    // Ao fechar, carimba closed_at uma vez (métrica de duração do dashboard).
+    await query(`update conversations set closed_at = coalesce(closed_at, now()) where id = $1`, [id]);
+  }
 }
 
 /** Grava o assunto principal da conversa (categoria/ação/tipo). Só atualiza os campos passados. */
