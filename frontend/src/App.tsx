@@ -161,6 +161,7 @@ export default function App() {
           <Route path="/" element={<Navigate to="/conversas" replace />} />
           <Route path="/conversas" element={<Conversas />} />
           <Route path="/dashboard" element={isAtendente ? <Navigate to="/conversas" replace /> : <Dashboard />} />
+          <Route path="*" element={<Navigate to="/conversas" replace />} />
         </Routes>
       </main>
     </div>
