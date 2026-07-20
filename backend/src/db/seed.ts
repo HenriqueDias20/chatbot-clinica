@@ -48,8 +48,8 @@ async function seed(): Promise<void> {
       clinic_name: 'Clínica de Fisioterapia',
       business_hours_start: '08:00',
       business_hours_end: '18:00',
-      clinic_address: 'Av. Exemplo, 123 — Centro\nSão Paulo, SP',
-      clinic_maps_url: 'https://maps.google.com/?q=Av.+Exemplo+123+Centro',
+      clinic_address: 'R. José de Alencar, 501 - Menino Deus, Porto Alegre - RS, 90880-481',
+      clinic_maps_url: 'https://maps.google.com/?q=R.+Jos%C3%A9+de+Alencar,+501+-+Menino+Deus,+Porto+Alegre+-+RS,+90880-481',
       business_hours_text:
         '⏰ *Horários de atendimento*\n\nSegunda a sexta: 08h às 18h\nSábados, domingos e feriados: fechado',
     };
@@ -68,7 +68,7 @@ async function seed(): Promise<void> {
     );
     if (faqCount === 0) {
       const faqs = [
-        { q: 'Qual o endereço da clínica?', a: 'Ficamos na Av. Exemplo, 123 — Centro. Há estacionamento no local.' },
+        { q: 'Qual o endereço da clínica?', a: 'Ficamos na R. José de Alencar, 501 - Menino Deus, Porto Alegre - RS, 90880-481.' },
         { q: 'Vocês atendem convênio?', a: 'Atendemos os principais convênios e também particular. Consulte a recepção para o seu plano.' },
         { q: 'Preciso de pedido médico?', a: 'Para a primeira avaliação não é obrigatório, mas é recomendado trazer o encaminhamento se tiver.' },
         { q: 'Quanto tempo dura uma sessão?', a: 'Em média 50 a 60 minutos, dependendo do tratamento.' },

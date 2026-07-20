@@ -189,7 +189,7 @@ export const SCENARIOS: Scenario[] = [
       return [
         ...greeting(nome),
         u('3'),
-        b('📍 *Localização*\nAv. Exemplo, 123 — Centro, São Paulo, SP\n🗺️ https://maps.google.com/?q=Clínica+Fisioterapia\n\n⏰ *Horário de atendimento*\nSegunda a sexta: 08h às 18h\nSábados, domingos e feriados: fechado'),
+        b('📍 *Localização*\nR. José de Alencar, 501 - Menino Deus, Porto Alegre - RS, 90880-481\n🗺️ https://maps.google.com/?q=R.+Jos%C3%A9+de+Alencar,+501+-+Menino+Deus,+Porto+Alegre+-+RS,+90880-481\n\n⏰ *Horário de atendimento*\nSegunda a sexta: 08h às 18h\nSábados, domingos e feriados: fechado'),
         b(FOLLOWUP),
         u('2'), b(ENCERRAR),
       ];
