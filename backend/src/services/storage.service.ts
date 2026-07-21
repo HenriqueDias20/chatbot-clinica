@@ -56,6 +56,9 @@ export async function uploadMedia(path: string, data: Buffer, mime: string): Pro
     const res = await fetch(`${BASE}/object/${BUCKET}/${encodeURI(path)}`, {
       method: 'POST',
       headers: {
+        // apikey + Authorization: aceita tanto a chave legada (service_role)
+        // quanto o novo formato de "secret key" do Supabase.
+        apikey: KEY,
         Authorization: `Bearer ${KEY}`,
         'Content-Type': mime || 'application/octet-stream',
         'x-upsert': 'true',
@@ -85,7 +88,7 @@ export async function createSignedUrl(path: string, expiresInSeconds = 3600): Pr
   try {
     const res = await fetch(`${BASE}/object/sign/${BUCKET}/${encodeURI(path)}`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+      headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ expiresIn: expiresInSeconds }),
     });
     const raw = (await res.json().catch(() => ({}))) as { signedURL?: string } & SupabaseError;
