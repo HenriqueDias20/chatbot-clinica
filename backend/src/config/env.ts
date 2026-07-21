@@ -33,6 +33,8 @@ const schema = z.object({
   // App Secret da Meta — usado para validar a assinatura X-Hub-Signature-256.
   // Opcional: se vazio, a verificação de assinatura é pulada (com aviso).
   WHATSAPP_APP_SECRET: z.string().default(''),
+  // ID da WABA (conta do WhatsApp Business) — usado para listar os templates aprovados.
+  WHATSAPP_WABA_ID: z.string().default(''),
 
   // App
   JWT_SECRET: z.string().default('dev-secret-trocar-em-producao'),

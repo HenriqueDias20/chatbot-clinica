@@ -6,6 +6,7 @@ import type {
   PatientAppointment,
   Professional,
   ProfessionalDaySchedule,
+  WhatsAppTemplate,
 } from '../types';
 
 export const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
@@ -109,6 +110,21 @@ export const api = {
     a.remove();
     URL.revokeObjectURL(url);
   },
+
+  getTemplates: () => request<{ templates: WhatsAppTemplate[]; error?: string }>('/api/templates'),
+
+  sendTemplate: (input: {
+    phone: string;
+    name?: string;
+    template: string;
+    language: string;
+    params: string[];
+    body: string;
+  }) =>
+    request<{ ok: boolean; conversationId: string; dryRun?: boolean }>('/api/templates/send', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
 
   getDemoScenarios: () =>
     request<{ scenarios: Array<{ id: string; label: string }> }>('/api/demo/scenarios').then((r) => r.scenarios),

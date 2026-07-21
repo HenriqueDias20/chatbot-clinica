@@ -45,6 +45,16 @@ export interface ConversationDetail {
   handed_off_at: string | null;
 }
 
+/** Template aprovado na Meta (para envio ativo pela recepção). */
+export interface WhatsAppTemplate {
+  name: string;
+  language: string;
+  category: string;
+  body: string;
+  /** Quantidade de variáveis {{1}}, {{2}}… que o corpo espera. */
+  paramCount: number;
+}
+
 export interface PatientAppointment {
   id: string;
   scheduled_at: string;
