@@ -25,6 +25,10 @@ export interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
   created_at: string;
+  /** image | audio | video | document | sticker — nulo quando é só texto. */
+  media_type: string | null;
+  media_mime: string | null;
+  media_name: string | null;
 }
 
 export interface ConversationDetail {
@@ -43,6 +47,16 @@ export interface ConversationDetail {
   action: string | null;
   subtype: string | null;
   handed_off_at: string | null;
+}
+
+/** Template aprovado na Meta (para envio ativo pela recepção). */
+export interface WhatsAppTemplate {
+  name: string;
+  language: string;
+  category: string;
+  body: string;
+  /** Quantidade de variáveis {{1}}, {{2}}… que o corpo espera. */
+  paramCount: number;
 }
 
 export interface PatientAppointment {

@@ -1,5 +1,28 @@
 import { normalizePhone } from './phone.js';
-import type { InboundMessage, WhatsAppIncomingMessage, WhatsAppWebhookBody } from '../types/whatsapp.js';
+import { MEDIA_KINDS } from '../types/whatsapp.js';
+import type {
+  InboundMedia,
+  InboundMessage,
+  WhatsAppIncomingMessage,
+  WhatsAppWebhookBody,
+} from '../types/whatsapp.js';
+
+/** Foto/áudio/vídeo/documento: guarda o id para baixar o arquivo depois. */
+function extractMedia(m: WhatsAppIncomingMessage): InboundMedia | undefined {
+  for (const kind of MEDIA_KINDS) {
+    const payload = m[kind];
+    if (payload?.id) {
+      return {
+        kind,
+        id: payload.id,
+        mime: payload.mime_type ?? 'application/octet-stream',
+        ...(payload.filename ? { filename: payload.filename } : {}),
+        ...(payload.caption ? { caption: payload.caption } : {}),
+      };
+    }
+  }
+  return undefined;
+}
 
 function extractText(m: WhatsAppIncomingMessage): string | null {
   switch (m.type) {
@@ -32,14 +55,17 @@ export function extractInboundMessages(body: WhatsAppWebhookBody): InboundMessag
       if (!value?.messages?.length) continue;
       const contactName = value.contacts?.[0]?.profile?.name ?? null;
       for (const m of value.messages) {
+        const media = extractMedia(m);
         out.push({
           waId: m.from,
           phone: normalizePhone(m.from),
           name: contactName,
           messageId: m.id,
           type: m.type,
-          text: extractText(m),
+          // Legenda da foto/documento entra como texto da mensagem.
+          text: extractText(m) ?? media?.caption ?? null,
           buttonReply: extractButtonReply(m),
+          ...(media ? { media } : {}),
         });
       }
     }

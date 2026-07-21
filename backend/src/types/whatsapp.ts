@@ -23,6 +23,19 @@ export interface WhatsAppValue {
   statuses?: WhatsAppStatus[];
 }
 
+/** Mídia recebida: a Meta manda só o id — o arquivo é baixado depois. */
+export interface WhatsAppMediaPayload {
+  id: string;
+  mime_type?: string;
+  sha256?: string;
+  caption?: string;
+  filename?: string;
+  voice?: boolean;
+}
+
+export const MEDIA_KINDS = ['image', 'audio', 'video', 'document', 'sticker'] as const;
+export type MediaKind = (typeof MEDIA_KINDS)[number];
+
 export interface WhatsAppIncomingMessage {
   from: string;
   id: string;
@@ -35,6 +48,11 @@ export interface WhatsAppIncomingMessage {
     button_reply?: { id: string; title: string };
     list_reply?: { id: string; title: string; description?: string };
   };
+  image?: WhatsAppMediaPayload;
+  audio?: WhatsAppMediaPayload;
+  video?: WhatsAppMediaPayload;
+  document?: WhatsAppMediaPayload;
+  sticker?: WhatsAppMediaPayload;
 }
 
 export interface WhatsAppStatus {
@@ -53,4 +71,15 @@ export interface InboundMessage {
   type: string;
   text: string | null;
   buttonReply?: { id: string; title: string };
+  /** Presente quando a mensagem traz foto/áudio/vídeo/documento. */
+  media?: InboundMedia;
+}
+
+export interface InboundMedia {
+  kind: MediaKind;
+  /** id da mídia na Meta (para buscar a URL e baixar). */
+  id: string;
+  mime: string;
+  filename?: string;
+  caption?: string;
 }

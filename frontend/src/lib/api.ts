@@ -6,6 +6,7 @@ import type {
   PatientAppointment,
   Professional,
   ProfessionalDaySchedule,
+  WhatsAppTemplate,
 } from '../types';
 
 export const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
@@ -74,6 +75,12 @@ export const api = {
 
   markRead: (id: string) => request<{ ok: boolean }>(`/api/conversations/${id}/read`, { method: 'POST' }),
 
+  /** Link assinado e temporário para exibir o anexo de uma mensagem. */
+  getMessageMedia: (id: string) =>
+    request<{ url: string; mime: string | null; type: string | null; name: string | null }>(
+      `/api/messages/${id}/media`,
+    ),
+
   sendMessage: (id: string, text: string) =>
     request<{ ok: boolean; message: Message }>(`/api/conversations/${id}/messages`, {
       method: 'POST',
@@ -109,6 +116,21 @@ export const api = {
     a.remove();
     URL.revokeObjectURL(url);
   },
+
+  getTemplates: () => request<{ templates: WhatsAppTemplate[]; error?: string }>('/api/templates'),
+
+  sendTemplate: (input: {
+    phone: string;
+    name?: string;
+    template: string;
+    language: string;
+    params: string[];
+    body: string;
+  }) =>
+    request<{ ok: boolean; conversationId: string; dryRun?: boolean }>('/api/templates/send', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
 
   getDemoScenarios: () =>
     request<{ scenarios: Array<{ id: string; label: string }> }>('/api/demo/scenarios').then((r) => r.scenarios),

@@ -1,6 +1,7 @@
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import Conversas from './pages/Conversas';
+import Templates from './pages/Templates';
 import Dashboard from './pages/Dashboard';
 import Login from './pages/Login';
 import { useRealtime, useSocketStatus } from './hooks/useRealtime';
@@ -29,6 +30,14 @@ function IconChat() {
     </svg>
   );
 }
+function IconSendMsg() {
+  return (
+    <svg {...svg} className="h-5 w-5">
+      <path d="m22 2-7 20-4-9-9-4Z" />
+      <path d="M22 2 11 13" />
+    </svg>
+  );
+}
 function IconChart() {
   return (
     <svg {...svg} className="h-5 w-5">
@@ -51,6 +60,7 @@ function IconLogout() {
 
 const navItems: Array<{ to: string; label: string; icon: ReactNode; fullOnly?: boolean }> = [
   { to: '/conversas', label: 'Conversas', icon: <IconChat /> },
+  { to: '/templates', label: 'Enviar mensagem', icon: <IconSendMsg /> },
   { to: '/dashboard', label: 'Dashboard', icon: <IconChart />, fullOnly: true },
 ];
 
@@ -160,6 +170,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/conversas" replace />} />
           <Route path="/conversas" element={<Conversas />} />
+          <Route path="/templates" element={<Templates />} />
           <Route path="/dashboard" element={isAtendente ? <Navigate to="/conversas" replace /> : <Dashboard />} />
           <Route path="*" element={<Navigate to="/conversas" replace />} />
         </Routes>

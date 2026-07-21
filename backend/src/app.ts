@@ -8,6 +8,7 @@ import { conversationRoutes } from './routes/conversations.js';
 import { agendaRoutes } from './routes/agenda.js';
 import { dashboardRoutes } from './routes/dashboard.js';
 import { authRoutes, authenticate } from './routes/auth.js';
+import { templateRoutes } from './routes/templates.js';
 import { demoRoutes } from './routes/demo.js';
 
 // Disponibiliza o corpo cru da requisição para validar a assinatura da Meta.
@@ -52,6 +53,7 @@ export function buildApp(): FastifyInstance {
   app.register(conversationRoutes);
   app.register(agendaRoutes);
   app.register(dashboardRoutes);
+  app.register(templateRoutes);
   app.register(demoRoutes);
 
   return app;
