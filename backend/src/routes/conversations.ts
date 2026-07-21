@@ -8,7 +8,8 @@ import {
   markRead,
   markFirstHumanResponse,
 } from '../repositories/conversation.repo.js';
-import { getLastMessages, saveMessage } from '../repositories/message.repo.js';
+import { getLastMessages, saveMessage, getMessageById } from '../repositories/message.repo.js';
+import { createSignedUrl } from '../services/storage.service.js';
 import { getPatientAppointments } from '../repositories/appointment.repo.js';
 import { whatsappService } from '../services/whatsapp.service.js';
 import { bus } from '../lib/events.js';
@@ -67,6 +68,15 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
     await setConversationStatus(convo.id, 'closed');
     bus.emit('conversation:status', { conversationId: convo.id, patientId: convo.patient_id, status: 'closed' });
     return { ok: true, status: 'closed' };
+  });
+
+  // Link temporário para exibir a mídia (o bucket é privado — nada fica público).
+  app.get<{ Params: { id: string } }>('/api/messages/:id/media', async (req, reply) => {
+    const msg = await getMessageById(req.params.id);
+    if (!msg?.media_path) return reply.code(404).send({ error: 'Mídia não encontrada' });
+    const signed = await createSignedUrl(msg.media_path);
+    if (!signed.ok) return reply.code(502).send({ error: signed.error });
+    return { url: signed.url, mime: msg.media_mime, type: msg.media_type, name: msg.media_name };
   });
 
   // Marca a conversa como lida (atendente abriu no painel) → sai da aba "Não lidas".

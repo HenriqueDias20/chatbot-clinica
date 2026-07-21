@@ -1,6 +1,7 @@
 import type { Worker as BullWorker } from 'bullmq';
 import { env } from '../config/env.js';
 import { logger } from '../lib/logger.js';
+import type { InboundMedia } from '../types/whatsapp.js';
 
 /** Job de mensagem recebida a ser processada pelo fluxo do bot. */
 export interface InboundJob {
@@ -8,6 +9,8 @@ export interface InboundJob {
   name: string | null;
   text: string | null;
   messageId: string;
+  /** Foto/áudio/documento: só a referência da Meta — o download acontece no bot. */
+  media?: InboundMedia;
 }
 
 export type JobHandler = (job: InboundJob) => Promise<void>;

@@ -384,6 +384,11 @@ export default function Conversas() {
                         : 'rounded-tr-md bg-petroleum-600 text-white'
                     }`}
                   >
+                    {m.media_type && (
+                      <div className="mb-1.5">
+                        <MessageMedia messageId={m.id} type={m.media_type} name={m.media_name} />
+                      </div>
+                    )}
                     {m.content}
                     <div className={`mt-1 text-right text-[10px] ${m.role === 'user' ? 'text-slate-400' : 'text-petroleum-200'}`}>
                       {fmtTime(m.created_at)}
@@ -529,7 +534,10 @@ export default function Conversas() {
   );
 
   function mediaSoon() {
-    alert('📎 Anexos e 🎤 áudio ficam disponíveis quando o WhatsApp real estiver conectado (API de mídia da Meta).');
+    alert(
+      'Enviar anexos 📎 e gravar áudio 🎤 ainda estão em desenvolvimento.\n\n' +
+        'As fotos, áudios e documentos que o CLIENTE enviar já aparecem aqui na conversa.',
+    );
   }
   function submit() {
     const t = draft.trim();
@@ -725,6 +733,36 @@ function Field({ label, value }: { label: string; value: string }) {
       <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
       <dd className="mt-0.5 font-medium text-slate-700">{value}</dd>
     </div>
+  );
+}
+
+/**
+ * Anexo da mensagem. O bucket é privado: pede ao backend um link assinado
+ * (válido por 1h) só quando a mensagem aparece na tela.
+ */
+function MessageMedia({ messageId, type, name }: { messageId: string; type: string; name: string | null }) {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['media', messageId],
+    queryFn: () => api.getMessageMedia(messageId),
+    staleTime: 30 * 60 * 1000,
+  });
+
+  if (isLoading) return <div className="text-xs opacity-70">Carregando anexo…</div>;
+  if (isError || !data) return <div className="text-xs opacity-70">Não foi possível carregar o anexo.</div>;
+
+  if (type === 'image' || type === 'sticker') {
+    return (
+      <a href={data.url} target="_blank" rel="noreferrer">
+        <img src={data.url} alt={name ?? 'imagem'} className="max-h-64 rounded-lg" />
+      </a>
+    );
+  }
+  if (type === 'audio') return <audio controls src={data.url} className="w-56" />;
+  if (type === 'video') return <video controls src={data.url} className="max-h-64 rounded-lg" />;
+  return (
+    <a href={data.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs underline">
+      📄 {name ?? 'Baixar arquivo'}
+    </a>
   );
 }
 

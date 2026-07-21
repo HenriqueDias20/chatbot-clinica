@@ -13,9 +13,21 @@ import {
   touchConversation,
   clearReminder,
 } from '../repositories/conversation.repo.js';
-import { getLastMessages, saveMessage } from '../repositories/message.repo.js';
+import { getLastMessages, saveMessage, type MessageMedia } from '../repositories/message.repo.js';
 import { getConfigs, listActiveFaq } from '../repositories/config.repo.js';
+import { whatsappService } from './whatsapp.service.js';
+import { buildMediaPath, uploadMedia } from './storage.service.js';
 import type { InboundJob } from './queue.service.js';
+import type { InboundMedia } from '../types/whatsapp.js';
+
+// Rótulo salvo quando a mídia vem sem legenda (melhor que "[mensagem não textual]").
+const MEDIA_LABELS: Record<string, string> = {
+  image: '📷 Foto',
+  audio: '🎤 Áudio',
+  video: '🎥 Vídeo',
+  document: '📄 Documento',
+  sticker: '🙂 Figurinha',
+};
 
 export type Outgoing =
   | { kind: 'text'; text: string }
@@ -266,6 +278,33 @@ export function createBotService(deps: BotDeps = {}) {
     }
   }
 
+  /**
+   * Baixa a mídia da Meta (a URL expira em minutos) e guarda no Storage.
+   * Se qualquer etapa falhar, a mensagem ainda é salva — só sem o arquivo.
+   */
+  async function persistInboundMedia(
+    conversationId: string,
+    media: InboundMedia,
+  ): Promise<MessageMedia | undefined> {
+    const meta = await whatsappService.getMediaMeta(media.id);
+    if (!meta.ok) {
+      log.error({ mediaId: media.id, error: meta.error }, 'Não foi possível obter a mídia recebida');
+      return undefined;
+    }
+    const file = await whatsappService.downloadMedia(meta.url, meta.mime);
+    if (!file.ok) {
+      log.error({ mediaId: media.id, error: file.error }, 'Falha ao baixar a mídia recebida');
+      return undefined;
+    }
+    const path = buildMediaPath(conversationId, file.mime);
+    const stored = await uploadMedia(path, file.data, file.mime);
+    if (!stored.ok) {
+      log.error({ path, error: stored.error }, 'Falha ao guardar a mídia no Storage');
+      return undefined;
+    }
+    return { type: media.kind, path, mime: file.mime, name: media.filename ?? null };
+  }
+
   async function handle(job: InboundJob): Promise<Outgoing[]> {
     const phone = normalizePhone(job.phone);
     const patient = await findOrCreatePatient(phone, job.name);
@@ -273,8 +312,11 @@ export function createBotService(deps: BotDeps = {}) {
     const body = (job.text ?? '').trim();
     const ctx = { conversationId: convo.id, patientId: patient.id, phone };
 
-    const userContent = body || '[mensagem não textual]';
-    await saveMessage(convo.id, 'user', userContent);
+    // Foto/áudio/documento: baixa e guarda antes de registrar a mensagem.
+    const media = job.media ? await persistInboundMedia(convo.id, job.media) : undefined;
+    const userContent =
+      body || (job.media ? (MEDIA_LABELS[job.media.kind] ?? '[mídia]') : '[mensagem não textual]');
+    await saveMessage(convo.id, 'user', userContent, media);
     await touchConversation(convo.id);
     // Paciente respondeu → cancela qualquer lembrete pendente de inatividade.
     await clearReminder(convo.id);

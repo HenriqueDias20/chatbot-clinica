@@ -36,6 +36,12 @@ const schema = z.object({
   // ID da WABA (conta do WhatsApp Business) — usado para listar os templates aprovados.
   WHATSAPP_WABA_ID: z.string().default(''),
 
+  // Supabase Storage — guarda as mídias (foto/áudio/documento) das conversas.
+  // Bucket PRIVADO: o painel recebe links assinados e temporários via backend.
+  SUPABASE_URL: z.string().default(''),
+  SUPABASE_SERVICE_KEY: z.string().default(''),
+  MEDIA_BUCKET: z.string().default('whatsapp-media'),
+
   // App
   JWT_SECRET: z.string().default('dev-secret-trocar-em-producao'),
   FRONTEND_URL: z.string().default('http://localhost:5173'),

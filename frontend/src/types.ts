@@ -25,6 +25,10 @@ export interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
   created_at: string;
+  /** image | audio | video | document | sticker — nulo quando é só texto. */
+  media_type: string | null;
+  media_mime: string | null;
+  media_name: string | null;
 }
 
 export interface ConversationDetail {

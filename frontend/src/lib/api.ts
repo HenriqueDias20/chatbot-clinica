@@ -75,6 +75,12 @@ export const api = {
 
   markRead: (id: string) => request<{ ok: boolean }>(`/api/conversations/${id}/read`, { method: 'POST' }),
 
+  /** Link assinado e temporário para exibir o anexo de uma mensagem. */
+  getMessageMedia: (id: string) =>
+    request<{ url: string; mime: string | null; type: string | null; name: string | null }>(
+      `/api/messages/${id}/media`,
+    ),
+
   sendMessage: (id: string, text: string) =>
     request<{ ok: boolean; message: Message }>(`/api/conversations/${id}/messages`, {
       method: 'POST',

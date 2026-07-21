@@ -56,7 +56,13 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
       const queue = await getMessageQueue();
       for (const m of messages) {
         app.log.info({ from: m.phone, type: m.type, messageId: m.messageId }, 'Mensagem recebida — enfileirando');
-        await queue.enqueue({ phone: m.phone, name: m.name, text: m.text, messageId: m.messageId });
+        await queue.enqueue({
+          phone: m.phone,
+          name: m.name,
+          text: m.text,
+          messageId: m.messageId,
+          ...(m.media ? { media: m.media } : {}),
+        });
       }
     } catch (err) {
       app.log.error({ err }, 'Erro ao enfileirar payload do webhook');

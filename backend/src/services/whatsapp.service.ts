@@ -41,6 +41,12 @@ export type ListTemplatesResult =
   | { ok: true; templates: WhatsAppTemplate[] }
   | { ok: false; error: string };
 
+export type MediaMetaResult =
+  | { ok: true; url: string; mime: string; fileSize: number }
+  | { ok: false; error: string };
+
+export type MediaDownloadResult = { ok: true; data: Buffer; mime: string } | { ok: false; error: string };
+
 // Limites da Meta Cloud API
 const MAX_BUTTONS = 3;
 const MAX_BUTTON_TITLE = 20;
@@ -231,7 +237,54 @@ export function createWhatsAppService(deps: WhatsAppDeps) {
     }
   }
 
-  return { sendText, sendButtons, sendTemplate, listTemplates, isConfigured };
+  // ── Mídia recebida: metadados + download ──
+  // A Meta não entrega o arquivo no webhook: manda um id, você pede a URL
+  // (que expira em minutos) e baixa o binário com o token.
+  async function getMediaMeta(mediaId: string): Promise<MediaMetaResult> {
+    if (!deps.token) return { ok: false, error: 'WHATSAPP_TOKEN não configurado' };
+    try {
+      const res = await fetchFn(`https://graph.facebook.com/${apiVersion}/${mediaId}`, {
+        headers: { Authorization: `Bearer ${deps.token}` },
+      });
+      const raw = (await res.json().catch(() => ({}))) as {
+        url?: string;
+        mime_type?: string;
+        file_size?: number;
+      } & MetaError;
+      if (!res.ok || !raw.url) {
+        const msg = raw.error?.message ?? `HTTP ${res.status}`;
+        log.error({ mediaId, status: res.status, error: msg }, 'Falha ao obter metadados da mídia');
+        return { ok: false, error: msg };
+      }
+      return {
+        ok: true,
+        url: raw.url,
+        mime: raw.mime_type ?? 'application/octet-stream',
+        fileSize: raw.file_size ?? 0,
+      };
+    } catch (err) {
+      log.error({ err, mediaId }, 'Erro de rede ao obter metadados da mídia');
+      return { ok: false, error: err instanceof Error ? err.message : 'erro desconhecido' };
+    }
+  }
+
+  async function downloadMedia(url: string, fallbackMime = 'application/octet-stream'): Promise<MediaDownloadResult> {
+    if (!deps.token) return { ok: false, error: 'WHATSAPP_TOKEN não configurado' };
+    try {
+      const res = await fetchFn(url, { headers: { Authorization: `Bearer ${deps.token}` } });
+      if (!res.ok) {
+        log.error({ status: res.status }, 'Falha ao baixar mídia da Meta');
+        return { ok: false, error: `HTTP ${res.status}` };
+      }
+      const data = Buffer.from(await res.arrayBuffer());
+      return { ok: true, data, mime: res.headers.get('content-type') ?? fallbackMime };
+    } catch (err) {
+      log.error({ err }, 'Erro de rede ao baixar mídia da Meta');
+      return { ok: false, error: err instanceof Error ? err.message : 'erro desconhecido' };
+    }
+  }
+
+  return { sendText, sendButtons, sendTemplate, listTemplates, getMediaMeta, downloadMedia, isConfigured };
 }
 
 export type WhatsAppService = ReturnType<typeof createWhatsAppService>;
