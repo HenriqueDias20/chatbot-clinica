@@ -62,16 +62,16 @@ function greeting(nome: string): Turn[] {
 }
 
 const consultaMenu = b(
-  '*Consulta* — o que você deseja?\n\n1️⃣ Agendar consulta\n2️⃣ Reagendar consulta\n3️⃣ Cancelar consulta\n4️⃣ Confirmar consulta\n5️⃣ Voltar ao menu principal\n\n' + RESPONDA,
+  '*Consulta* — o que você deseja?\n\n1️⃣ Agendar consulta\n2️⃣ Reagendar consulta\n3️⃣ Cancelar consulta\n4️⃣ Voltar ao menu principal\n\n' + RESPONDA,
 );
 const sessaoMenu = b(
-  '*Sessão* — o que você deseja?\n\n1️⃣ Agendar sessão\n2️⃣ Reagendar sessão\n3️⃣ Cancelar sessão\n4️⃣ Confirmar sessão\n5️⃣ Voltar ao menu principal\n\n' + RESPONDA,
+  '*Sessão* — o que você deseja?\n\n1️⃣ Reagendar sessão\n2️⃣ Cancelar sessão\n3️⃣ Voltar ao menu principal\n\n' + RESPONDA,
 );
 const consultaTipos = b(
-  'Qual tipo de consulta você deseja agendar?\n\n1️⃣ Primeira consulta\n2️⃣ Retorno\n3️⃣ Pós-operatório\n4️⃣ Fisiatria\n5️⃣ Medicina do Esporte\n6️⃣ Avaliação\n7️⃣ Outros\n\n' + RESPONDA,
+  'O que você deseja agendar?\n\n1️⃣ Consulta de Fisiatria\n2️⃣ Consulta de Medicina do Esporte\n3️⃣ Sessão de Fisioterapia\n4️⃣ Outros\n\n' + RESPONDA,
 );
-const sessaoTipos = b(
-  'Qual tipo de sessão você deseja agendar?\n\n1️⃣ Fisioterapia\n2️⃣ Cinesioterapia\n3️⃣ Particular\n4️⃣ Pélvica\n5️⃣ Pilates\n6️⃣ RPG\n7️⃣ Outros\n\n' + RESPONDA,
+const consultaModalidade = b(
+  'Entendi! E qual é o seu caso?\n\n1️⃣ Primeira Consulta\n2️⃣ Primeira Consulta / Pós-Operatório\n3️⃣ Retorno\n\n' + RESPONDA,
 );
 const convenioMenu = b(
   'Para direcionar corretamente, qual é o seu convênio?\n\n1️⃣ Particular\n2️⃣ Cabergs\n3️⃣ Unimed\n4️⃣ Saúde Caixa\n5️⃣ Amil\n6️⃣ Geap\n7️⃣ Ipê Saúde\n8️⃣ Outros\n\n' + RESPONDA,
@@ -99,14 +99,15 @@ interface Scenario {
 export const SCENARIOS: Scenario[] = [
   {
     id: 'agendar_consulta',
-    label: 'Consulta · Agendar (Primeira consulta)',
-    intake: { category: 'consulta', action: 'agendar', subtype: 'Primeira consulta' },
+    label: 'Consulta · Agendar (Fisiatria)',
+    intake: { category: 'consulta', action: 'agendar', subtype: 'Consulta de Fisiatria — Primeira Consulta' },
     build: (p) => {
       const nome = p.name.split(' ')[0]!;
       return [
         ...greeting(nome),
         u('1'), consultaMenu,
         u('1'), consultaTipos,
+        u('1'), consultaModalidade,
         u('1'), convenioMenu,
         ...convenioTurns(p),
         transbordo,
@@ -115,16 +116,17 @@ export const SCENARIOS: Scenario[] = [
     },
   },
   {
-    id: 'agendar_sessao',
-    label: 'Sessão · Agendar (Fisioterapia)',
-    intake: { category: 'sessao', action: 'agendar', subtype: 'Fisioterapia' },
+    id: 'agendar_sessao_fisio',
+    label: 'Sessão de Fisioterapia · Agendar (Retorno)',
+    intake: { category: 'sessao', action: 'agendar', subtype: 'Sessão de Fisioterapia — Retorno' },
     build: (p) => {
       const nome = p.name.split(' ')[0]!;
       return [
         ...greeting(nome),
-        u('2'), sessaoMenu,
-        u('1'), sessaoTipos,
-        u('1'), convenioMenu,
+        u('1'), consultaMenu,
+        u('1'), consultaTipos,
+        u('3'), consultaModalidade,
+        u('3'), convenioMenu,
         ...convenioTurns(p),
         transbordo,
         u('Combinado, fico no aguardo! 🙂'),
@@ -132,36 +134,17 @@ export const SCENARIOS: Scenario[] = [
     },
   },
   {
-    id: 'consulta_avaliacao',
-    label: 'Consulta · Avaliação (Antropometria)',
-    intake: { category: 'consulta', action: 'agendar', subtype: 'Avaliação — Antropometria' },
+    id: 'reagendar_consulta',
+    label: 'Consulta · Reagendar',
+    intake: { category: 'consulta', action: 'reagendar' },
     build: (p) => {
       const nome = p.name.split(' ')[0]!;
       return [
         ...greeting(nome),
         u('1'), consultaMenu,
-        u('1'), consultaTipos,
-        u('6'),
-        b('*Avaliação* — qual tipo?\n\n1️⃣ Antropometria\n2️⃣ Baropodometria\n3️⃣ Ergoespirometria\n4️⃣ FMS\n5️⃣ Outros\n\n' + RESPONDA),
-        u('1'), convenioMenu,
-        ...convenioTurns(p),
+        u('2'),
         transbordo,
-        u('Ótimo, obrigada! 🙏'),
-      ];
-    },
-  },
-  {
-    id: 'confirmar_consulta',
-    label: 'Consulta · Confirmar',
-    intake: { category: 'consulta', action: 'confirmar' },
-    build: (p) => {
-      const nome = p.name.split(' ')[0]!;
-      return [
-        ...greeting(nome),
-        u('1'), consultaMenu,
-        u('4'),
-        transbordo,
-        u('Só queria confirmar mesmo, obrigado!'),
+        u('Preciso mudar o horário da minha consulta, por favor.'),
       ];
     },
   },
@@ -174,7 +157,7 @@ export const SCENARIOS: Scenario[] = [
       return [
         ...greeting(nome),
         u('2'), sessaoMenu,
-        u('3'),
+        u('2'),
         transbordo,
         u('Preciso cancelar a de amanhã, por favor.'),
       ];
