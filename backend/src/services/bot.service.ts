@@ -44,9 +44,8 @@ type Step =
   | 'main_menu'
   | 'consulta_menu'
   | 'consulta_tipo'
-  | 'consulta_avaliacao'
+  | 'consulta_modalidade'
   | 'sessao_menu'
-  | 'sessao_tipo'
   | 'await_tipo_outros'
   | 'convenio'
   | 'await_convenio_outros'
@@ -148,35 +147,28 @@ export function createBotService(deps: BotDeps = {}) {
   const consultaMenuText = (): Outgoing =>
     text(
       `*Consulta* — o que você deseja?\n\n` +
-        `1️⃣ Agendar consulta\n2️⃣ Reagendar consulta\n3️⃣ Cancelar consulta\n4️⃣ Confirmar consulta\n5️⃣ Voltar ao menu principal\n\n` +
+        `1️⃣ Agendar consulta\n2️⃣ Reagendar consulta\n3️⃣ Cancelar consulta\n4️⃣ Voltar ao menu principal\n\n` +
         RESPONDA,
     );
 
   const consultaTipoText = (): Outgoing =>
     text(
-      `Qual tipo de consulta você deseja agendar?\n\n` +
-        `1️⃣ Primeira consulta\n2️⃣ Retorno\n3️⃣ Pós-operatório\n4️⃣ Fisiatria\n5️⃣ Medicina do Esporte\n6️⃣ Avaliação\n7️⃣ Outros\n\n` +
+      `O que você deseja agendar?\n\n` +
+        `1️⃣ Consulta de Fisiatria\n2️⃣ Consulta de Medicina do Esporte\n3️⃣ Sessão de Fisioterapia\n4️⃣ Outros\n\n` +
         RESPONDA,
     );
 
-  const avaliacaoText = (): Outgoing =>
+  const consultaModalidadeText = (): Outgoing =>
     text(
-      `*Avaliação* — qual tipo?\n\n` +
-        `1️⃣ Antropometria\n2️⃣ Baropodometria\n3️⃣ Ergoespirometria\n4️⃣ FMS\n5️⃣ Outros\n\n` +
+      `Entendi! E qual é o seu caso?\n\n` +
+        `1️⃣ Primeira Consulta\n2️⃣ Primeira Consulta / Pós-Operatório\n3️⃣ Retorno\n\n` +
         RESPONDA,
     );
 
   const sessaoMenuText = (): Outgoing =>
     text(
       `*Sessão* — o que você deseja?\n\n` +
-        `1️⃣ Agendar sessão\n2️⃣ Reagendar sessão\n3️⃣ Cancelar sessão\n4️⃣ Confirmar sessão\n5️⃣ Voltar ao menu principal\n\n` +
-        RESPONDA,
-    );
-
-  const sessaoTipoText = (): Outgoing =>
-    text(
-      `Qual tipo de sessão você deseja agendar?\n\n` +
-        `1️⃣ Fisioterapia\n2️⃣ Cinesioterapia\n3️⃣ Particular\n4️⃣ Pélvica\n5️⃣ Pilates\n6️⃣ RPG\n7️⃣ Outros\n\n` +
+        `1️⃣ Reagendar sessão\n2️⃣ Cancelar sessão\n3️⃣ Voltar ao menu principal\n\n` +
         RESPONDA,
     );
 
@@ -403,94 +395,75 @@ export function createBotService(deps: BotDeps = {}) {
 
       // ── Submenu Consulta ──
       case 'consulta_menu': {
-        if (n === 1 || n === 2) {
-          await setConversationIntake(convo.id, { action: n === 1 ? 'agendar' : 'reagendar' });
+        if (n === 1) {
+          await setConversationIntake(convo.id, { action: 'agendar' });
           await setConversationState(convo.id, { step: 'consulta_tipo' });
           return saveOutgoing(ctx, [consultaTipoText()]);
         }
-        if (n === 3 || n === 4) {
-          await setConversationIntake(convo.id, { action: n === 3 ? 'cancelar' : 'confirmar' });
+        // Reagendar/Cancelar são sobre algo que já existe → transbordo direto.
+        if (n === 2 || n === 3) {
+          await setConversationIntake(convo.id, { action: n === 2 ? 'reagendar' : 'cancelar' });
           return saveOutgoing(ctx, await handoffHuman(ctx));
         }
-        if (n === 5) {
+        if (n === 4) {
           await setConversationState(convo.id, { step: 'main_menu' });
           return saveOutgoing(ctx, [mainMenuText(patient)]);
         }
         return saveOutgoing(ctx, [text('Não entendi. 🙂'), consultaMenuText()]);
       }
 
-      // ── Tipo de consulta ──
+      // ── O que agendar ──
       case 'consulta_tipo': {
         const tipos: Record<number, string> = {
-          1: 'Primeira consulta',
-          2: 'Retorno',
-          3: 'Pós-operatório',
-          4: 'Fisiatria',
-          5: 'Medicina do Esporte',
+          1: 'Consulta de Fisiatria',
+          2: 'Consulta de Medicina do Esporte',
+          3: 'Sessão de Fisioterapia',
         };
-        if (tipos[n]) return saveOutgoing(ctx, await goToConvenio(convo.id, 'consulta', tipos[n]!));
-        if (n === 6) {
-          await setConversationState(convo.id, { step: 'consulta_avaliacao' });
-          return saveOutgoing(ctx, [avaliacaoText()]);
+        const tipo = tipos[n];
+        if (tipo) {
+          // "Sessão de Fisioterapia" é sessão de fato → conta como Sessão no relatório.
+          if (n === 3) await setConversationIntake(convo.id, { category: 'sessao' });
+          await setConversationState(convo.id, {
+            step: 'consulta_modalidade',
+            pendingKind: 'consulta',
+            pendingTipo: tipo,
+          });
+          return saveOutgoing(ctx, [consultaModalidadeText()]);
         }
-        if (n === 7) {
-          // Outros → pede descrição
+        if (n === 4) {
+          // Outros → descreve por escrito e segue direto para o convênio.
           await setConversationState(convo.id, { step: 'await_tipo_outros', pendingKind: 'consulta', pendingTipo: '' });
-          return saveOutgoing(ctx, [text('Certo! Pode me dizer qual tipo de consulta você precisa? ✍️')]);
+          return saveOutgoing(ctx, [text('Certo! Pode me dizer o que você precisa? ✍️')]);
         }
         return saveOutgoing(ctx, [text('Não entendi. 🙂'), consultaTipoText()]);
       }
 
-      // ── Avaliação (submenu de consulta) ──
-      case 'consulta_avaliacao': {
-        const tipos: Record<number, string> = {
-          1: 'Avaliação — Antropometria',
-          2: 'Avaliação — Baropodometria',
-          3: 'Avaliação — Ergoespirometria',
-          4: 'Avaliação — FMS',
+      // ── Primeira consulta / retorno ──
+      case 'consulta_modalidade': {
+        const modalidades: Record<number, string> = {
+          1: 'Primeira Consulta',
+          2: 'Primeira Consulta / Pós-Operatório',
+          3: 'Retorno',
         };
-        if (tipos[n]) return saveOutgoing(ctx, await goToConvenio(convo.id, 'consulta', tipos[n]!));
-        if (n === 5) {
-          await setConversationState(convo.id, { step: 'await_tipo_outros', pendingKind: 'consulta', pendingTipo: 'Avaliação — ' });
-          return saveOutgoing(ctx, [text('Certo! Pode me dizer qual avaliação você precisa? ✍️')]);
+        const escolha = modalidades[n];
+        if (escolha) {
+          const base = state.pendingTipo ?? '';
+          return saveOutgoing(ctx, await goToConvenio(convo.id, 'consulta', base ? `${base} — ${escolha}` : escolha));
         }
-        return saveOutgoing(ctx, [text('Não entendi. 🙂'), avaliacaoText()]);
+        return saveOutgoing(ctx, [text('Não entendi. 🙂'), consultaModalidadeText()]);
       }
 
-      // ── Submenu Sessão ──
+      // ── Submenu Sessão (agendar acontece por Consulta → "Sessão de Fisioterapia") ──
       case 'sessao_menu': {
         if (n === 1 || n === 2) {
-          await setConversationIntake(convo.id, { action: n === 1 ? 'agendar' : 'reagendar' });
-          await setConversationState(convo.id, { step: 'sessao_tipo' });
-          return saveOutgoing(ctx, [sessaoTipoText()]);
-        }
-        if (n === 3 || n === 4) {
-          await setConversationIntake(convo.id, { action: n === 3 ? 'cancelar' : 'confirmar' });
+          await setConversationIntake(convo.id, { action: n === 1 ? 'reagendar' : 'cancelar' });
           return saveOutgoing(ctx, await handoffHuman(ctx));
         }
-        if (n === 5) {
+        if (n === 3) {
           await setConversationState(convo.id, { step: 'main_menu' });
           return saveOutgoing(ctx, [mainMenuText(patient)]);
         }
         return saveOutgoing(ctx, [text('Não entendi. 🙂'), sessaoMenuText()]);
-      }
-
-      // ── Tipo de sessão ──
-      case 'sessao_tipo': {
-        const tipos: Record<number, string> = {
-          1: 'Fisioterapia',
-          2: 'Cinesioterapia',
-          3: 'Particular',
-          4: 'Pélvica',
-          5: 'Pilates',
-          6: 'RPG',
-        };
-        if (tipos[n]) return saveOutgoing(ctx, await goToConvenio(convo.id, 'sessao', tipos[n]!));
-        if (n === 7) {
-          await setConversationState(convo.id, { step: 'await_tipo_outros', pendingKind: 'sessao', pendingTipo: '' });
-          return saveOutgoing(ctx, [text('Certo! Pode me dizer qual tipo de sessão você precisa? ✍️')]);
-        }
-        return saveOutgoing(ctx, [text('Não entendi. 🙂'), sessaoTipoText()]);
       }
 
       // ── "Outros" (tipo) digitado livremente ──
