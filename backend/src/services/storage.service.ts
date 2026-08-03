@@ -7,7 +7,21 @@ import { logger } from '../lib/logger.js';
  * um link assinado e temporário.
  */
 
-const BASE = env.SUPABASE_URL ? `${env.SUPABASE_URL.replace(/\/+$/, '')}/storage/v1` : '';
+/**
+ * Base do Storage a partir da SUPABASE_URL. Usa só o domínio (protocolo + host),
+ * ignorando qualquer caminho colado por engano (ex.: ".../storage/v1", ".../rest/v1"),
+ * que causa "Invalid path specified in request URL".
+ */
+function storageBase(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.protocol}//${u.host}/storage/v1`;
+  } catch {
+    return `${url.replace(/\/+$/, '')}/storage/v1`;
+  }
+}
+
+const BASE = env.SUPABASE_URL ? storageBase(env.SUPABASE_URL) : '';
 const BUCKET = env.MEDIA_BUCKET;
 const KEY = env.SUPABASE_SERVICE_KEY;
 
@@ -68,7 +82,7 @@ export async function uploadMedia(path: string, data: Buffer, mime: string): Pro
     if (!res.ok) {
       const raw = (await res.json().catch(() => ({}))) as SupabaseError;
       const msg = raw.message ?? raw.error ?? `HTTP ${res.status}`;
-      logger.error({ status: res.status, path, error: msg }, 'Falha ao subir mídia para o Supabase Storage');
+      logger.error({ status: res.status, base: BASE, bucket: BUCKET, path, error: msg }, 'Falha ao subir mídia para o Supabase Storage');
       return { ok: false, error: msg };
     }
     logger.info({ path, mime, bytes: data.length }, 'Mídia salva no Storage');
