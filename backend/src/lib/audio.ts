@@ -20,10 +20,16 @@ export async function transcodeToOggOpus(input: Buffer): Promise<TranscodeResult
     const inPath = join(dir, 'in.webm');
     const outPath = join(dir, 'out.ogg');
     await writeFile(inPath, input);
-    // Reencoda para opus mono 16kHz (voz) — leve e compatível com o WhatsApp.
+    // Formato padrão de mensagem de voz do WhatsApp: opus mono 48kHz, otimizado p/ voz.
+    // (48kHz + application=voip é o que o WhatsApp no iOS espera — 16kHz dava "áudio indisponível".)
     await run(
       'ffmpeg',
-      ['-y', '-i', inPath, '-vn', '-c:a', 'libopus', '-b:a', '32k', '-ar', '16000', '-ac', '1', '-f', 'ogg', outPath],
+      [
+        '-y', '-i', inPath,
+        '-vn', '-ac', '1', '-ar', '48000',
+        '-c:a', 'libopus', '-b:a', '32k', '-application', 'voip',
+        '-f', 'ogg', outPath,
+      ],
       { timeout: 30_000 },
     );
     const data = await readFile(outPath);
