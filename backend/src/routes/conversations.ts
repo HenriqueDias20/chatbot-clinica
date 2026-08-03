@@ -12,6 +12,7 @@ import { getLastMessages, saveMessage, getMessageById } from '../repositories/me
 import { createSignedUrl, buildMediaPath, uploadMedia } from '../services/storage.service.js';
 import { getPatientAppointments } from '../repositories/appointment.repo.js';
 import { whatsappService, mediaTypeFromMime } from '../services/whatsapp.service.js';
+import { transcodeToOggOpus } from '../lib/audio.js';
 import { bus } from '../lib/events.js';
 
 const OUT_MEDIA_LABELS: Record<string, string> = {
@@ -132,14 +133,24 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
     const convo = await getConversationWithPatient(req.params.id);
     if (!convo) return reply.code(404).send({ error: 'Conversa não encontrada' });
 
-    const buf = Buffer.from(fileBase64, 'base64');
-    if (buf.length === 0) return reply.code(400).send({ error: 'Arquivo vazio.' });
+    const rawBuf = Buffer.from(fileBase64, 'base64');
+    if (rawBuf.length === 0) return reply.code(400).send({ error: 'Arquivo vazio.' });
 
     const type = mediaTypeFromMime(mime);
     const cap = caption?.trim() || undefined;
 
+    // Áudio gravado no navegador vem em webm → converte para ogg/opus (aceito pela Meta).
+    let buf: Buffer = rawBuf;
+    let outMime = mime;
+    if (type === 'audio' && mime.toLowerCase().includes('webm')) {
+      const conv = await transcodeToOggOpus(rawBuf);
+      if (!conv.ok) return reply.code(502).send({ error: conv.error });
+      buf = conv.data;
+      outMime = 'audio/ogg';
+    }
+
     // 1) sobe pra Meta e envia
-    const up = await whatsappService.uploadMediaToMeta(buf, mime, filename || 'arquivo');
+    const up = await whatsappService.uploadMediaToMeta(buf, outMime, filename || 'arquivo');
     if (!up.ok) return reply.code(502).send({ error: up.error });
     const sent = await whatsappService.sendMedia(convo.phone, {
       type,
@@ -151,8 +162,8 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
 
     // 2) guarda no Storage para o painel exibir (best-effort — se falhar, ainda registra)
     let media: { type: string; path: string; mime: string; name?: string | null } | undefined;
-    const stored = await uploadMedia(buildMediaPath(convo.id, mime), buf, mime);
-    if (stored.ok) media = { type, path: stored.path, mime, name: filename ?? null };
+    const stored = await uploadMedia(buildMediaPath(convo.id, outMime), buf, outMime);
+    if (stored.ok) media = { type, path: stored.path, mime: outMime, name: filename ?? null };
 
     // 3) registra no histórico
     const content = cap ?? OUT_MEDIA_LABELS[type] ?? '[mídia]';
