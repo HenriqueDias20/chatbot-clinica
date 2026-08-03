@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
@@ -25,6 +25,28 @@ function attendantWaitingMin(c: ConversationListItem, nowMs: number): number | n
 function isUnread(c: ConversationListItem): boolean {
   if (c.status === 'closed' || c.last_role !== 'user' || !c.last_message_at) return false;
   return !c.last_read_at || new Date(c.last_read_at).getTime() < new Date(c.last_message_at).getTime();
+}
+
+function fmtRec(s: number): string {
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+/** Lê um arquivo como base64 (sem o prefixo data:) para enviar ao backend. */
+function readFileAsBase64(file: File): Promise<{ base64: string; mime: string; name: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result);
+      const comma = result.indexOf(',');
+      resolve({
+        base64: comma >= 0 ? result.slice(comma + 1) : result,
+        mime: file.type || 'application/octet-stream',
+        name: file.name,
+      });
+    };
+    reader.onerror = () => reject(new Error('Falha ao ler o arquivo.'));
+    reader.readAsDataURL(file);
+  });
 }
 function fmtTime(iso: string | null): string {
   if (!iso) return '';
@@ -80,6 +102,14 @@ export default function Conversas() {
   const [demoMenuOpen, setDemoMenuOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [recording, setRecording] = useState(false);
+  const [recSeconds, setRecSeconds] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const audioStreamRef = useRef<MediaStream | null>(null);
+  const recCancelledRef = useRef(false);
+  const recConvIdRef = useRef<string | null>(null);
   const location = useLocation();
 
   // Clique na marca (topo) → volta à tela inicial: Conversas ativas, sem seleção.
@@ -135,6 +165,13 @@ export default function Conversas() {
     return () => clearInterval(id);
   }, []);
 
+  // Cronômetro da gravação de áudio.
+  useEffect(() => {
+    if (!recording) return;
+    const id = setInterval(() => setRecSeconds((s) => s + 1), 1000);
+    return () => clearInterval(id);
+  }, [recording]);
+
   function refreshConversation(id: string) {
     qc.invalidateQueries({ queryKey: ['conversations'] });
     qc.invalidateQueries({ queryKey: ['messages', id] });
@@ -154,6 +191,17 @@ export default function Conversas() {
       setDraft('');
       refreshConversation(vars.id);
     },
+  });
+  const sendMedia = useMutation({
+    mutationFn: async ({ id, file, caption }: { id: string; file: File; caption: string }) => {
+      const { base64, mime, name } = await readFileAsBase64(file);
+      return api.sendMedia(id, { fileBase64: base64, mime, filename: name, caption });
+    },
+    onSuccess: (_d, vars) => {
+      setDraft('');
+      refreshConversation(vars.id);
+    },
+    onError: (e) => alert((e as Error).message),
   });
   const playDemo = useMutation({
     mutationFn: (scenario?: string) => api.playDemo(scenario),
@@ -434,30 +482,58 @@ export default function Conversas() {
                   ))}
                 </div>
               )}
-              <div className="flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-slate-50 px-2 py-1.5 focus-within:border-petroleum-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-petroleum-100">
-                <button onClick={mediaSoon} title="Anexar arquivo" className="rounded-lg p-2 text-slate-400 hover:bg-slate-200/60 hover:text-slate-600">
-                  <IconPaperclip />
-                </button>
-                <button onClick={() => setEmojiOpen((v) => !v)} title="Emoji" className="rounded-lg p-2 text-slate-400 hover:bg-slate-200/60 hover:text-slate-600">
-                  <IconSmile />
-                </button>
-                <input
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && submit()}
-                  placeholder="Escreva uma mensagem..."
-                  className="flex-1 bg-transparent px-1 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none"
-                />
-                {draft.trim() ? (
-                  <button onClick={submit} disabled={sendMessage.isPending} title="Enviar" className="rounded-xl bg-petroleum-600 p-2 text-white shadow-soft transition hover:bg-petroleum-700 disabled:opacity-50">
+              <input
+                ref={fileInputRef}
+                type="file"
+                hidden
+                accept="image/*,audio/*,video/*,application/pdf"
+                onChange={onPickFile}
+              />
+              {recording ? (
+                <div className="flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2.5">
+                  <span className="relative flex h-3 w-3">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-500 opacity-75" />
+                    <span className="relative inline-flex h-3 w-3 rounded-full bg-rose-500" />
+                  </span>
+                  <span className="flex-1 text-sm font-medium text-rose-700">Gravando… {fmtRec(recSeconds)}</span>
+                  <button onClick={cancelRecording} title="Cancelar" className="rounded-lg p-2 text-slate-500 hover:bg-slate-200/60 hover:text-slate-700">
+                    <IconTrash />
+                  </button>
+                  <button onClick={stopAndSend} title="Enviar áudio" className="rounded-xl bg-petroleum-600 p-2 text-white transition hover:bg-petroleum-700">
                     <IconSend />
                   </button>
-                ) : (
-                  <button onClick={mediaSoon} title="Gravar áudio" className="rounded-xl bg-petroleum-600 p-2 text-white transition hover:bg-petroleum-700">
-                    <IconMic />
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-slate-50 px-2 py-1.5 focus-within:border-petroleum-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-petroleum-100">
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={sendMedia.isPending}
+                    title="Anexar foto, áudio ou documento"
+                    className="rounded-lg p-2 text-slate-400 hover:bg-slate-200/60 hover:text-slate-600 disabled:opacity-50"
+                  >
+                    <IconPaperclip />
                   </button>
-                )}
-              </div>
+                  <button onClick={() => setEmojiOpen((v) => !v)} title="Emoji" className="rounded-lg p-2 text-slate-400 hover:bg-slate-200/60 hover:text-slate-600">
+                    <IconSmile />
+                  </button>
+                  <input
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && submit()}
+                    placeholder={sendMedia.isPending ? 'Enviando anexo…' : 'Escreva uma mensagem...'}
+                    className="flex-1 bg-transparent px-1 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none"
+                  />
+                  {draft.trim() ? (
+                    <button onClick={submit} disabled={sendMessage.isPending} title="Enviar" className="rounded-xl bg-petroleum-600 p-2 text-white shadow-soft transition hover:bg-petroleum-700 disabled:opacity-50">
+                      <IconSend />
+                    </button>
+                  ) : (
+                    <button onClick={startRecording} disabled={sendMedia.isPending} title="Gravar áudio" className="rounded-xl bg-petroleum-600 p-2 text-white transition hover:bg-petroleum-700 disabled:opacity-50">
+                      <IconMic />
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
             )}
           </>
@@ -533,11 +609,61 @@ export default function Conversas() {
     </div>
   );
 
-  function mediaSoon() {
-    alert(
-      'Enviar anexos 📎 e gravar áudio 🎤 ainda estão em desenvolvimento.\n\n' +
-        'As fotos, áudios e documentos que o CLIENTE enviar já aparecem aqui na conversa.',
-    );
+  function stopAudioStream() {
+    audioStreamRef.current?.getTracks().forEach((t) => t.stop());
+    audioStreamRef.current = null;
+  }
+  async function startRecording() {
+    if (!selected || recording) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioStreamRef.current = stream;
+      audioChunksRef.current = [];
+      recCancelledRef.current = false;
+      recConvIdRef.current = selected.id;
+      const mr = new MediaRecorder(stream);
+      mr.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+      mr.onstop = () => {
+        stopAudioStream();
+        const convId = recConvIdRef.current;
+        const chunks = audioChunksRef.current;
+        audioChunksRef.current = [];
+        if (recCancelledRef.current || !convId || chunks.length === 0) return;
+        const blob = new Blob(chunks, { type: mr.mimeType || 'audio/webm' });
+        const file = new File([blob], 'audio.webm', { type: blob.type });
+        sendMedia.mutate({ id: convId, file, caption: '' });
+      };
+      mr.start();
+      mediaRecorderRef.current = mr;
+      setRecSeconds(0);
+      setRecording(true);
+    } catch {
+      alert('Não consegui acessar o microfone. Verifique a permissão do navegador.');
+    }
+  }
+  function stopAndSend() {
+    setRecording(false);
+    mediaRecorderRef.current?.stop(); // dispara o onstop → envia
+    mediaRecorderRef.current = null;
+  }
+  function cancelRecording() {
+    recCancelledRef.current = true;
+    setRecording(false);
+    mediaRecorderRef.current?.stop();
+    mediaRecorderRef.current = null;
+    stopAudioStream();
+  }
+  function onPickFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // permite reenviar o mesmo arquivo depois
+    if (!file || !selected) return;
+    if (file.size > 16 * 1024 * 1024) {
+      alert('Arquivo muito grande (máximo 16 MB).');
+      return;
+    }
+    sendMedia.mutate({ id: selected.id, file, caption: draft.trim() });
   }
   function submit() {
     const t = draft.trim();

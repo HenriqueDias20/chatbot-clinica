@@ -47,6 +47,19 @@ export type MediaMetaResult =
 
 export type MediaDownloadResult = { ok: true; data: Buffer; mime: string } | { ok: false; error: string };
 
+export type MediaSendType = 'image' | 'audio' | 'video' | 'document';
+
+/** Categoria de mídia da Meta a partir do mime. */
+export function mediaTypeFromMime(mime: string): MediaSendType {
+  const m = (mime || '').toLowerCase();
+  if (m.startsWith('image/')) return 'image';
+  if (m.startsWith('audio/')) return 'audio';
+  if (m.startsWith('video/')) return 'video';
+  return 'document';
+}
+
+export type UploadToMetaResult = { ok: true; id: string } | { ok: false; error: string };
+
 // Limites da Meta Cloud API
 const MAX_BUTTONS = 3;
 const MAX_BUTTON_TITLE = 20;
@@ -284,7 +297,63 @@ export function createWhatsAppService(deps: WhatsAppDeps) {
     }
   }
 
-  return { sendText, sendButtons, sendTemplate, listTemplates, getMediaMeta, downloadMedia, isConfigured };
+  // ── Envio de mídia: sobe o arquivo pra Meta (retorna um id) e manda a mensagem ──
+  async function uploadMediaToMeta(data: Buffer, mime: string, filename: string): Promise<UploadToMetaResult> {
+    if (!isConfigured) {
+      log.warn({ mime, filename }, 'WhatsApp DRY-RUN — upload de mídia NÃO enviado (sem credenciais)');
+      return { ok: true, id: 'dry-run-media-id' };
+    }
+    try {
+      const form = new FormData();
+      form.append('messaging_product', 'whatsapp');
+      form.append('type', mime);
+      form.append('file', new Blob([new Uint8Array(data)], { type: mime }), filename);
+      const res = await fetchFn(`https://graph.facebook.com/${apiVersion}/${deps.phoneNumberId}/media`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${deps.token}` },
+        body: form,
+      });
+      const raw = (await res.json().catch(() => ({}))) as { id?: string } & MetaError;
+      if (!res.ok || !raw.id) {
+        const msg = raw.error?.message ?? `HTTP ${res.status}`;
+        log.error({ status: res.status, error: raw.error }, 'Falha ao subir mídia para a Meta');
+        return { ok: false, error: msg };
+      }
+      return { ok: true, id: raw.id };
+    } catch (err) {
+      log.error({ err }, 'Erro de rede ao subir mídia para a Meta');
+      return { ok: false, error: err instanceof Error ? err.message : 'erro desconhecido' };
+    }
+  }
+
+  async function sendMedia(
+    phone: string,
+    opts: { type: MediaSendType; mediaId: string; caption?: string; filename?: string },
+  ): Promise<SendResult> {
+    const media: Record<string, unknown> = { id: opts.mediaId };
+    // image/video/document aceitam legenda; áudio não.
+    if (opts.caption && opts.type !== 'audio') media.caption = opts.caption;
+    if (opts.type === 'document' && opts.filename) media.filename = opts.filename;
+    const payload = {
+      messaging_product: 'whatsapp',
+      to: toWhatsAppRecipient(phone),
+      type: opts.type,
+      [opts.type]: media,
+    };
+    return send(payload, `media:${opts.type}`);
+  }
+
+  return {
+    sendText,
+    sendButtons,
+    sendTemplate,
+    listTemplates,
+    getMediaMeta,
+    downloadMedia,
+    uploadMediaToMeta,
+    sendMedia,
+    isConfigured,
+  };
 }
 
 export type WhatsAppService = ReturnType<typeof createWhatsAppService>;
