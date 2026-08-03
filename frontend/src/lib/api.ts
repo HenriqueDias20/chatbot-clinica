@@ -87,6 +87,13 @@ export const api = {
       body: JSON.stringify({ text }),
     }),
 
+  /** Envia um anexo (foto/áudio/vídeo/documento) ao cliente. */
+  sendMedia: (id: string, input: { fileBase64: string; mime: string; filename?: string; caption?: string }) =>
+    request<{ ok: boolean; message: Message }>(`/api/conversations/${id}/media`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
   getProfessionals: () =>
     request<{ professionals: Professional[] }>('/api/professionals').then((r) => r.professionals),
 

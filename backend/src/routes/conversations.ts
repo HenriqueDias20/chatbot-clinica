@@ -9,10 +9,17 @@ import {
   markFirstHumanResponse,
 } from '../repositories/conversation.repo.js';
 import { getLastMessages, saveMessage, getMessageById } from '../repositories/message.repo.js';
-import { createSignedUrl } from '../services/storage.service.js';
+import { createSignedUrl, buildMediaPath, uploadMedia } from '../services/storage.service.js';
 import { getPatientAppointments } from '../repositories/appointment.repo.js';
-import { whatsappService } from '../services/whatsapp.service.js';
+import { whatsappService, mediaTypeFromMime } from '../services/whatsapp.service.js';
 import { bus } from '../lib/events.js';
+
+const OUT_MEDIA_LABELS: Record<string, string> = {
+  image: '📷 Foto',
+  audio: '🎤 Áudio',
+  video: '🎥 Vídeo',
+  document: '📄 Documento',
+};
 
 export async function conversationRoutes(app: FastifyInstance): Promise<void> {
   // Todas as rotas do painel exigem login.
@@ -112,4 +119,55 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
       return { ok: true, message, whatsapp: result };
     },
   );
+
+  // Recepcionista envia um anexo (foto/áudio/vídeo/documento) ao cliente.
+  // Corpo em base64 (bodyLimit elevado). Sobe pra Meta, envia, e guarda no Storage p/ exibir.
+  app.post<{
+    Params: { id: string };
+    Body: { fileBase64?: string; mime?: string; filename?: string; caption?: string };
+  }>('/api/conversations/:id/media', { bodyLimit: 25 * 1024 * 1024 }, async (req, reply) => {
+    const { fileBase64, mime, filename, caption } = req.body ?? {};
+    if (!fileBase64 || !mime) return reply.code(400).send({ error: 'Arquivo inválido.' });
+
+    const convo = await getConversationWithPatient(req.params.id);
+    if (!convo) return reply.code(404).send({ error: 'Conversa não encontrada' });
+
+    const buf = Buffer.from(fileBase64, 'base64');
+    if (buf.length === 0) return reply.code(400).send({ error: 'Arquivo vazio.' });
+
+    const type = mediaTypeFromMime(mime);
+    const cap = caption?.trim() || undefined;
+
+    // 1) sobe pra Meta e envia
+    const up = await whatsappService.uploadMediaToMeta(buf, mime, filename || 'arquivo');
+    if (!up.ok) return reply.code(502).send({ error: up.error });
+    const sent = await whatsappService.sendMedia(convo.phone, {
+      type,
+      mediaId: up.id,
+      caption: cap,
+      filename: filename || undefined,
+    });
+    if (!sent.ok) return reply.code(502).send({ error: sent.error });
+
+    // 2) guarda no Storage para o painel exibir (best-effort — se falhar, ainda registra)
+    let media: { type: string; path: string; mime: string; name?: string | null } | undefined;
+    const stored = await uploadMedia(buildMediaPath(convo.id, mime), buf, mime);
+    if (stored.ok) media = { type, path: stored.path, mime, name: filename ?? null };
+
+    // 3) registra no histórico
+    const content = cap ?? OUT_MEDIA_LABELS[type] ?? '[mídia]';
+    const message = await saveMessage(convo.id, 'assistant', content, media);
+    await markFirstHumanResponse(convo.id);
+
+    bus.emit('message:new', {
+      conversationId: convo.id,
+      patientId: convo.patient_id,
+      phone: convo.phone,
+      role: 'assistant',
+      content,
+      at: message.created_at,
+    });
+
+    return { ok: true, message, dryRun: sent.dryRun };
+  });
 }

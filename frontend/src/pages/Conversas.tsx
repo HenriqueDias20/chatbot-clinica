@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
@@ -25,6 +25,24 @@ function attendantWaitingMin(c: ConversationListItem, nowMs: number): number | n
 function isUnread(c: ConversationListItem): boolean {
   if (c.status === 'closed' || c.last_role !== 'user' || !c.last_message_at) return false;
   return !c.last_read_at || new Date(c.last_read_at).getTime() < new Date(c.last_message_at).getTime();
+}
+
+/** Lê um arquivo como base64 (sem o prefixo data:) para enviar ao backend. */
+function readFileAsBase64(file: File): Promise<{ base64: string; mime: string; name: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result);
+      const comma = result.indexOf(',');
+      resolve({
+        base64: comma >= 0 ? result.slice(comma + 1) : result,
+        mime: file.type || 'application/octet-stream',
+        name: file.name,
+      });
+    };
+    reader.onerror = () => reject(new Error('Falha ao ler o arquivo.'));
+    reader.readAsDataURL(file);
+  });
 }
 function fmtTime(iso: string | null): string {
   if (!iso) return '';
@@ -80,6 +98,7 @@ export default function Conversas() {
   const [demoMenuOpen, setDemoMenuOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const location = useLocation();
 
   // Clique na marca (topo) → volta à tela inicial: Conversas ativas, sem seleção.
@@ -154,6 +173,17 @@ export default function Conversas() {
       setDraft('');
       refreshConversation(vars.id);
     },
+  });
+  const sendMedia = useMutation({
+    mutationFn: async ({ id, file, caption }: { id: string; file: File; caption: string }) => {
+      const { base64, mime, name } = await readFileAsBase64(file);
+      return api.sendMedia(id, { fileBase64: base64, mime, filename: name, caption });
+    },
+    onSuccess: (_d, vars) => {
+      setDraft('');
+      refreshConversation(vars.id);
+    },
+    onError: (e) => alert((e as Error).message),
   });
   const playDemo = useMutation({
     mutationFn: (scenario?: string) => api.playDemo(scenario),
@@ -434,8 +464,20 @@ export default function Conversas() {
                   ))}
                 </div>
               )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                hidden
+                accept="image/*,audio/*,video/*,application/pdf"
+                onChange={onPickFile}
+              />
               <div className="flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-slate-50 px-2 py-1.5 focus-within:border-petroleum-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-petroleum-100">
-                <button onClick={mediaSoon} title="Anexar arquivo" className="rounded-lg p-2 text-slate-400 hover:bg-slate-200/60 hover:text-slate-600">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={sendMedia.isPending}
+                  title="Anexar foto, áudio ou documento"
+                  className="rounded-lg p-2 text-slate-400 hover:bg-slate-200/60 hover:text-slate-600 disabled:opacity-50"
+                >
                   <IconPaperclip />
                 </button>
                 <button onClick={() => setEmojiOpen((v) => !v)} title="Emoji" className="rounded-lg p-2 text-slate-400 hover:bg-slate-200/60 hover:text-slate-600">
@@ -445,7 +487,7 @@ export default function Conversas() {
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && submit()}
-                  placeholder="Escreva uma mensagem..."
+                  placeholder={sendMedia.isPending ? 'Enviando anexo…' : 'Escreva uma mensagem...'}
                   className="flex-1 bg-transparent px-1 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none"
                 />
                 {draft.trim() ? (
@@ -453,7 +495,7 @@ export default function Conversas() {
                     <IconSend />
                   </button>
                 ) : (
-                  <button onClick={mediaSoon} title="Gravar áudio" className="rounded-xl bg-petroleum-600 p-2 text-white transition hover:bg-petroleum-700">
+                  <button onClick={recordSoon} title="Gravar áudio (em breve)" className="rounded-xl bg-petroleum-600 p-2 text-white transition hover:bg-petroleum-700">
                     <IconMic />
                   </button>
                 )}
@@ -533,11 +575,21 @@ export default function Conversas() {
     </div>
   );
 
-  function mediaSoon() {
+  function recordSoon() {
     alert(
-      'Enviar anexos 📎 e gravar áudio 🎤 ainda estão em desenvolvimento.\n\n' +
-        'As fotos, áudios e documentos que o CLIENTE enviar já aparecem aqui na conversa.',
+      'Gravar áudio na hora ainda está em desenvolvimento.\n\n' +
+        'Para enviar um áudio agora, use o 📎 e anexe um arquivo de áudio.',
     );
+  }
+  function onPickFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // permite reenviar o mesmo arquivo depois
+    if (!file || !selected) return;
+    if (file.size > 16 * 1024 * 1024) {
+      alert('Arquivo muito grande (máximo 16 MB).');
+      return;
+    }
+    sendMedia.mutate({ id: selected.id, file, caption: draft.trim() });
   }
   function submit() {
     const t = draft.trim();
