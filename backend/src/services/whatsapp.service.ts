@@ -27,7 +27,7 @@ export interface WhatsAppDeps {
   log?: Logger;
 }
 
-/** Template aprovado na Meta, já normalizado para o painel. */
+/** Template da Meta, já normalizado para o painel. */
 export interface WhatsAppTemplate {
   name: string;
   language: string;
@@ -35,6 +35,10 @@ export interface WhatsAppTemplate {
   body: string;
   /** Quantidade de variáveis {{1}}, {{2}}… que o corpo espera. */
   paramCount: number;
+  /** Status na Meta (APPROVED, PENDING, REJECTED…). */
+  status: string;
+  /** Só os aprovados podem ser enviados. */
+  approved: boolean;
 }
 
 export type ListTemplatesResult =
@@ -210,7 +214,9 @@ export function createWhatsAppService(deps: WhatsAppDeps) {
     return send(payload, 'template');
   }
 
-  // ── Lista os templates APROVADOS da WABA (para o painel escolher) ──
+  // ── Lista os templates da WABA (para o painel escolher) ──
+  // Traz também os não aprovados, com o status, para o painel explicar por que
+  // um modelo não pode ser usado (em vez de sumir sem explicação).
   async function listTemplates(): Promise<ListTemplatesResult> {
     if (!deps.token || !wabaId) {
       return { ok: false, error: 'Configure WHATSAPP_TOKEN e WHATSAPP_WABA_ID para listar os templates.' };
@@ -226,8 +232,13 @@ export function createWhatsAppService(deps: WhatsAppDeps) {
         log.error({ status: res.status, error: raw.error }, 'Falha ao listar templates do WhatsApp');
         return { ok: false, error: msg };
       }
+      log.info(
+        { total: raw.data?.length ?? 0, templates: (raw.data ?? []).map((t) => `${t.name}:${t.status}`) },
+        'Templates retornados pela Meta',
+      );
       const templates: WhatsAppTemplate[] = (raw.data ?? [])
-        .filter((t) => t.status === 'APPROVED' && t.name)
+        // hello_world é o exemplo da Meta: só funciona em números de teste.
+        .filter((t) => t.name && t.name !== 'hello_world')
         .map((t) => {
           const body = t.components?.find((c) => c.type === 'BODY')?.text ?? '';
           // Descobre quantas variáveis {{n}} o corpo usa.
@@ -235,14 +246,19 @@ export function createWhatsAppService(deps: WhatsAppDeps) {
           const nums: number[] = [];
           let m: RegExpExecArray | null;
           while ((m = re.exec(body)) !== null) nums.push(Number(m[1]));
+          const status = t.status ?? 'UNKNOWN';
           return {
             name: t.name!,
             language: t.language ?? 'pt_BR',
             category: t.category ?? '',
             body,
             paramCount: nums.length > 0 ? Math.max(...nums) : 0,
+            status,
+            approved: status === 'APPROVED',
           };
-        });
+        })
+        // Aprovados primeiro.
+        .sort((a, b) => Number(b.approved) - Number(a.approved));
       return { ok: true, templates };
     } catch (err) {
       log.error({ err }, 'Erro de rede ao listar templates do WhatsApp');

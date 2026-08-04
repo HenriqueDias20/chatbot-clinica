@@ -72,7 +72,7 @@ export default function Templates() {
 
       {!templatesQuery.isLoading && !listError && templates.length === 0 && (
         <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-gray-600 shadow-sm">
-          <strong className="text-gray-900">Nenhum modelo aprovado ainda.</strong>
+          <strong className="text-gray-900">Nenhum modelo encontrado nesta conta.</strong>
           <p className="mt-2">
             Crie os modelos no <strong>WhatsApp Manager</strong> (Meta) em <em>Modelos de mensagem → Criar modelo</em>,
             categoria <strong>Utilidade</strong> e idioma <strong>Português (BR)</strong>. Assim que a Meta aprovar,
@@ -85,19 +85,30 @@ export default function Templates() {
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-[320px_1fr]">
           {/* Lista de modelos */}
           <div className="rounded-2xl bg-white p-4 shadow-sm">
-            <h2 className="mb-3 text-sm font-semibold text-gray-900">Modelos aprovados</h2>
+            <h2 className="mb-3 text-sm font-semibold text-gray-900">Modelos</h2>
             <ul className="space-y-2">
               {templates.map((t) => (
                 <li key={`${t.name}-${t.language}`}>
                   <button
-                    onClick={() => pick(t)}
+                    onClick={() => t.approved && pick(t)}
+                    disabled={!t.approved}
+                    title={t.approved ? undefined : `Status na Meta: ${t.status}`}
                     className={`w-full rounded-xl border p-3 text-left transition ${
-                      selected?.name === t.name
-                        ? 'border-petroleum-500 bg-petroleum-50'
-                        : 'border-slate-200 hover:bg-slate-50'
+                      !t.approved
+                        ? 'cursor-not-allowed border-slate-200 bg-slate-50 opacity-60'
+                        : selected?.name === t.name
+                          ? 'border-petroleum-500 bg-petroleum-50'
+                          : 'border-slate-200 hover:bg-slate-50'
                     }`}
                   >
-                    <div className="text-sm font-semibold text-gray-900">{t.name}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-gray-900">{t.name}</span>
+                      {!t.approved && (
+                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                          {t.status}
+                        </span>
+                      )}
+                    </div>
                     <div className="mt-0.5 line-clamp-2 text-xs text-gray-500">{t.body}</div>
                     <div className="mt-1 text-[10px] uppercase tracking-wide text-gray-400">
                       {t.language} · {t.category}
