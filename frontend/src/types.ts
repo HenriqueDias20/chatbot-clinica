@@ -49,7 +49,7 @@ export interface ConversationDetail {
   handed_off_at: string | null;
 }
 
-/** Template aprovado na Meta (para envio ativo pela recepção). */
+/** Template da Meta (para envio ativo pela recepção). */
 export interface WhatsAppTemplate {
   name: string;
   language: string;
@@ -57,6 +57,10 @@ export interface WhatsAppTemplate {
   body: string;
   /** Quantidade de variáveis {{1}}, {{2}}… que o corpo espera. */
   paramCount: number;
+  /** Status na Meta (APPROVED, PENDING, REJECTED…). */
+  status: string;
+  /** Só os aprovados podem ser enviados. */
+  approved: boolean;
 }
 
 export interface PatientAppointment {
