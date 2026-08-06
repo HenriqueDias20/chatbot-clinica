@@ -7,12 +7,14 @@ import { hashPassword } from '../lib/auth.js';
  * Cria usuários (recepcionistas) do painel. Idempotente: pula quem já existe.
  * Rodar no Console do Railway:  npm run seed:users
  */
-const NEW_USERS: Array<{ name: string; email: string }> = [
-  { name: 'Júlia Gambini Duarte', email: 'julia@clinica.com' },
-  { name: 'Kessia Ribeiro Gonçalves', email: 'kessia@clinica.com' },
-  { name: 'Yasmin Moura Lopes', email: 'yasmin@clinica.com' },
-  { name: 'Geusa Bilhalba More', email: 'geusa@clinica.com' },
-  { name: 'Janaina Biffi', email: 'janaina@clinica.com' },
+// role 'atendente' = acesso somente à aba Conversas.
+const NEW_USERS: Array<{ name: string; email: string; role: 'recepcao' | 'atendente' }> = [
+  { name: 'Júlia Gambini Duarte', email: 'julia@clinica.com', role: 'atendente' },
+  { name: 'Kessia Ribeiro Gonçalves', email: 'kessia@clinica.com', role: 'atendente' },
+  { name: 'Yasmin Moura Lopes', email: 'yasmin@clinica.com', role: 'atendente' },
+  { name: 'Geusa Bilhalba More', email: 'geusa@clinica.com', role: 'atendente' },
+  { name: 'Isadora Santos Ajala', email: 'isadora@clinica.com', role: 'atendente' },
+  { name: 'Janaina Biffi', email: 'janaina@clinica.com', role: 'recepcao' },
 ];
 
 const DEFAULT_PASSWORD = 'clinica123';
@@ -29,8 +31,8 @@ async function main(): Promise<void> {
         continue;
       }
       await client.query(
-        `insert into users (name, email, password_hash, role) values ($1, $2, $3, 'recepcao')`,
-        [u.name, u.email, hashPassword(DEFAULT_PASSWORD)],
+        `insert into users (name, email, password_hash, role) values ($1, $2, $3, $4)`,
+        [u.name, u.email, hashPassword(DEFAULT_PASSWORD), u.role],
       );
       created++;
       logger.info({ email: u.email, name: u.name }, 'Usuário criado');
