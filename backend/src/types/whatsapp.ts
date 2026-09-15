@@ -55,11 +55,20 @@ export interface WhatsAppIncomingMessage {
   sticker?: WhatsAppMediaPayload;
 }
 
+/** Erro anexado a um status "failed" (ex.: 131047 = fora da janela de 24h). */
+export interface WhatsAppStatusError {
+  code: number;
+  title?: string;
+  message?: string;
+  error_data?: { details?: string };
+}
+
 export interface WhatsAppStatus {
   id: string;
   status: string; // sent | delivered | read | failed
   recipient_id: string;
   timestamp: string;
+  errors?: WhatsAppStatusError[];
 }
 
 /** Mensagem recebida já normalizada para uso interno. */

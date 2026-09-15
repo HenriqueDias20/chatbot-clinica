@@ -4,6 +4,7 @@ import type {
   InboundMedia,
   InboundMessage,
   WhatsAppIncomingMessage,
+  WhatsAppStatus,
   WhatsAppWebhookBody,
 } from '../types/whatsapp.js';
 
@@ -68,6 +69,17 @@ export function extractInboundMessages(body: WhatsAppWebhookBody): InboundMessag
           ...(media ? { media } : {}),
         });
       }
+    }
+  }
+  return out;
+}
+
+/** Status de entrega (sent/delivered/read/failed) que a Meta manda depois de aceitar um envio. */
+export function extractStatuses(body: WhatsAppWebhookBody): WhatsAppStatus[] {
+  const out: WhatsAppStatus[] = [];
+  for (const entry of body.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      out.push(...(change.value?.statuses ?? []));
     }
   }
   return out;

@@ -73,7 +73,9 @@ interface MetaError {
 }
 
 interface MetaSendResponse {
-  messages?: Array<{ id: string }>;
+  contacts?: Array<{ input?: string; wa_id?: string }>;
+  // message_status (só template): accepted | held_for_quality_assessment | paused
+  messages?: Array<{ id: string; message_status?: string }>;
 }
 
 interface MetaTemplateComponent {
@@ -136,7 +138,17 @@ export function createWhatsAppService(deps: WhatsAppDeps) {
       }
 
       const messageId = raw.messages?.[0]?.id ?? null;
-      log.info({ kind, messageId, to: payload.to }, 'Mensagem WhatsApp enviada');
+      // "Aceita" não é "entregue": a confirmação (ou a falha) chega depois, pelo webhook.
+      log.info(
+        {
+          kind,
+          messageId,
+          to: payload.to,
+          waId: raw.contacts?.[0]?.wa_id,
+          messageStatus: raw.messages?.[0]?.message_status,
+        },
+        'Mensagem WhatsApp aceita pela Meta',
+      );
       return { ok: true, messageId, dryRun: false };
     } catch (err) {
       log.error({ kind, err }, 'Erro de rede ao chamar a Meta Cloud API');

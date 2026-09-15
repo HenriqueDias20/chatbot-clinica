@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { env } from '../config/env.js';
 import { verifyMetaSignature } from '../lib/signature.js';
-import { extractInboundMessages } from '../lib/whatsapp-inbound.js';
+import { extractInboundMessages, extractStatuses } from '../lib/whatsapp-inbound.js';
 import { getMessageQueue } from '../services/queue.service.js';
 import type { WhatsAppWebhookBody } from '../types/whatsapp.js';
 
@@ -45,14 +45,26 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
     // 2) Responde 200 imediatamente (a Meta reenvia se demorar).
     reply.code(200).send();
 
-    // 3) Enfileira as mensagens para o fluxo do bot processar.
     try {
       const body = req.body as WhatsAppWebhookBody;
-      const messages = extractInboundMessages(body);
-      if (messages.length === 0) {
-        app.log.debug('Webhook POST sem mensagens (provavelmente status de entrega)');
-        return;
+
+      // 3) Status de entrega. A Meta aceita o envio na hora e só avisa aqui, depois,
+      //    quando não consegue entregar — sem este log a falha fica invisível.
+      for (const s of extractStatuses(body)) {
+        if (s.status === 'failed') {
+          const e = s.errors?.[0];
+          app.log.error(
+            { messageId: s.id, to: s.recipient_id, errors: s.errors },
+            `Meta NÃO entregou a mensagem${e ? ` (${e.code}: ${e.title ?? e.message ?? 'sem descrição'})` : ''}`,
+          );
+        } else {
+          app.log.info({ messageId: s.id, to: s.recipient_id, status: s.status }, 'Status de entrega da Meta');
+        }
       }
+
+      // 4) Enfileira as mensagens para o fluxo do bot processar.
+      const messages = extractInboundMessages(body);
+      if (messages.length === 0) return;
       const queue = await getMessageQueue();
       for (const m of messages) {
         app.log.info({ from: m.phone, type: m.type, messageId: m.messageId }, 'Mensagem recebida — enfileirando');
