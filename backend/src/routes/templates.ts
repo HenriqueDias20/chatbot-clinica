@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { whatsappService } from '../services/whatsapp.service.js';
-import { normalizePhone } from '../lib/phone.js';
+import { normalizeTypedPhone } from '../lib/phone.js';
 import { findOrCreatePatient } from '../repositories/patient.repo.js';
 import {
   getOrCreateActiveConversation,
@@ -48,7 +48,7 @@ export async function templateRoutes(app: FastifyInstance): Promise<void> {
     if (!templateName) return reply.code(400).send({ error: 'Escolha um template.' });
     if (params.some((p) => !p)) return reply.code(400).send({ error: 'Preencha todas as variáveis do template.' });
 
-    const phone = normalizePhone(phoneRaw);
+    const phone = normalizeTypedPhone(phoneRaw);
     const sent = await whatsappService.sendTemplate(
       phone,
       templateName,
