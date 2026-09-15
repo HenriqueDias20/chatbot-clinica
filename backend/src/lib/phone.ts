@@ -20,3 +20,23 @@ export function toWhatsAppRecipient(raw: string): string {
   }
   return d;
 }
+
+/**
+ * Número DIGITADO no painel (ex.: "51 99406-8240") → mesmo formato do `wa_id`
+ * que chega pelo webhook (555194068240), para achar o paciente certo.
+ * Sem o 55, a Meta lê "51…" como Peru (+51) e não entrega (erro 131026).
+ * Com "+" na frente, respeita o código de país digitado.
+ */
+export function normalizeTypedPhone(raw: string): string {
+  const input = (raw ?? '').trim();
+  let d = normalizePhone(input);
+  // Sem "+": DDD + 8 dígitos, ou DDD + 9 + 8 dígitos (celular) → Brasil.
+  if (!input.startsWith('+') && (d.length === 10 || (d.length === 11 && d[2] === '9'))) {
+    d = `55${d}`;
+  }
+  // Celular com o 9 → formato do wa_id, sem o 9 (toWhatsAppRecipient recoloca no envio).
+  if (d.startsWith('55') && d.length === 13 && d[4] === '9') {
+    d = `${d.slice(0, 4)}${d.slice(5)}`;
+  }
+  return d;
+}
