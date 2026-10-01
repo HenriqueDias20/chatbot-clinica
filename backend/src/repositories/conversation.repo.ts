@@ -55,10 +55,17 @@ export interface ConversationListItem {
 /** Conversas para o painel (ativas, finalizadas ou não lidas), com dados do paciente e prévia da última mensagem. */
 export async function listConversationsForPanel(
   filter: 'active' | 'finalized' | 'unread' = 'active',
+  /** Aba Finalizadas restrita às conversas deste responsável (papel atendente). */
+  finalizedOnlyFor?: string,
 ): Promise<ConversationListItem[]> {
   let whereClause: string;
+  const params: string[] = [];
   if (filter === 'finalized') {
     whereClause = "c.status = 'closed'";
+    if (finalizedOnlyFor) {
+      params.push(finalizedOnlyFor);
+      whereClause += ' and c.assigned_user_id = $1';
+    }
   } else if (filter === 'unread') {
     // Não lida: ativa, última mensagem é do cliente, e ainda não foi aberta desde então.
     whereClause =
@@ -81,6 +88,7 @@ export async function listConversationsForPanel(
      ) lm on true
      where ${whereClause}
      order by c.last_message_at desc nulls last`,
+    params,
   );
   return res.rows;
 }
@@ -174,6 +182,29 @@ export async function markRead(id: string): Promise<void> {
 export async function assignConversation(id: string, userId: string): Promise<void> {
   await query(
     `update conversations set status = 'human', assigned_user_id = $2, assigned_at = now() where id = $1`,
+    [id, userId],
+  );
+}
+
+/**
+ * Registra `userId` como responsável se a conversa ainda não tem um (não mexe em conversa
+ * fechada): responder ou iniciar a conversa sem clicar em "Assumir" também assume.
+ * Retorna true se assumiu agora.
+ */
+export async function assignIfUnassigned(id: string, userId: string): Promise<boolean> {
+  const res = await query(
+    `update conversations set status = 'human', assigned_user_id = $2, assigned_at = now()
+     where id = $1 and assigned_user_id is null and status <> 'closed'`,
+    [id, userId],
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+/** Ao finalizar uma conversa sem responsável, quem finalizou fica registrado como responsável. */
+export async function assignCloserIfUnassigned(id: string, userId: string): Promise<void> {
+  await query(
+    `update conversations set assigned_user_id = $2, assigned_at = now()
+     where id = $1 and assigned_user_id is null`,
     [id, userId],
   );
 }

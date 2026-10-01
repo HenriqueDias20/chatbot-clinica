@@ -4,6 +4,7 @@ import { normalizeTypedPhone } from '../lib/phone.js';
 import { findOrCreatePatient } from '../repositories/patient.repo.js';
 import {
   getOrCreateActiveConversation,
+  assignIfUnassigned,
   markHandedOff,
   setConversationIntake,
   touchConversation,
@@ -66,6 +67,8 @@ export async function templateRoutes(app: FastifyInstance): Promise<void> {
     // Quem iniciou foi a recepção → a conversa é da atendente, não do bot.
     await setConversationIntake(convo.id, { category: 'atendente', action: null, subtype: null });
     await markHandedOff(convo.id);
+    // …e de quem enviou: ela vira a responsável, se a conversa ainda não tinha uma.
+    const assumed = await assignIfUnassigned(convo.id, req.user!.id);
 
     bus.emit('message:new', {
       conversationId: convo.id,
@@ -75,7 +78,12 @@ export async function templateRoutes(app: FastifyInstance): Promise<void> {
       content: text,
       at: message.created_at,
     });
-    bus.emit('conversation:status', { conversationId: convo.id, patientId: patient.id, status: 'human' });
+    bus.emit('conversation:status', {
+      conversationId: convo.id,
+      patientId: patient.id,
+      status: 'human',
+      ...(assumed ? { assignedUserId: req.user!.id, assignedUserName: req.user!.name } : {}),
+    });
 
     return { ok: true, conversationId: convo.id, dryRun: sent.dryRun };
   });
