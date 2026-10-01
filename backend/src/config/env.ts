@@ -7,6 +7,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 // backend/.env fica dois níveis acima de src/config
 config({ path: resolve(here, '../../.env') });
 
+// Segredo de desenvolvimento: recusado em produção (ver checagem no fim do arquivo).
+const DEV_JWT_SECRET = 'dev-secret-trocar-em-producao';
+
 const schema = z.object({
   NODE_ENV: z.string().default('development'),
   PORT: z.coerce.number().default(3000),
@@ -31,7 +34,8 @@ const schema = z.object({
   WHATSAPP_PHONE_NUMBER_ID: z.string().default(''),
   WHATSAPP_WEBHOOK_VERIFY_TOKEN: z.string().default(''),
   // App Secret da Meta — usado para validar a assinatura X-Hub-Signature-256.
-  // Opcional: se vazio, a verificação de assinatura é pulada (com aviso).
+  // Vazio só em desenvolvimento (verificação pulada, com aviso). Com WHATSAPP_TOKEN
+  // preenchido ele é obrigatório: sem assinatura, qualquer um forja mensagens.
   WHATSAPP_APP_SECRET: z.string().default(''),
   // ID da WABA (conta do WhatsApp Business) — usado para listar os templates aprovados.
   WHATSAPP_WABA_ID: z.string().default(''),
@@ -43,7 +47,7 @@ const schema = z.object({
   MEDIA_BUCKET: z.string().default('whatsapp-media'),
 
   // App
-  JWT_SECRET: z.string().default('dev-secret-trocar-em-producao'),
+  JWT_SECRET: z.string().default(DEV_JWT_SECRET),
   FRONTEND_URL: z.string().default('http://localhost:5173'),
 
   // Regras de negócio
@@ -55,6 +59,12 @@ const schema = z.object({
     .default('false')
     .transform((v) => v === 'true' || v === '1'),
   TIMEZONE: z.string().default('America/Sao_Paulo'),
+
+  // Botão "Demo" do painel (conversas fictícias). Desligado por padrão: não usar em produção.
+  DEMO_ENABLED: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true' || v === '1'),
 });
 
 const parsed = schema.safeParse(process.env);
@@ -65,6 +75,27 @@ if (!parsed.success) {
       level: 'fatal',
       msg: 'Variáveis de ambiente inválidas',
       errors: parsed.error.flatten().fieldErrors,
+    }),
+  );
+  process.exit(1);
+}
+
+// Segredo ausente derruba o boot: o deploy falha e a versão anterior continua no ar,
+// em vez de subir em modo inseguro sem ninguém perceber.
+const insecure: string[] = [];
+if (parsed.data.NODE_ENV === 'production' && (!parsed.data.JWT_SECRET || parsed.data.JWT_SECRET === DEV_JWT_SECRET)) {
+  insecure.push('JWT_SECRET');
+}
+if (parsed.data.WHATSAPP_TOKEN && !parsed.data.WHATSAPP_APP_SECRET) {
+  insecure.push('WHATSAPP_APP_SECRET');
+}
+if (insecure.length > 0) {
+  // eslint-disable-next-line no-console
+  console.error(
+    JSON.stringify({
+      level: 'fatal',
+      msg: 'Variáveis de segurança ausentes ou com o valor padrão',
+      missing: insecure,
     }),
   );
   process.exit(1);

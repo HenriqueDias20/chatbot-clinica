@@ -250,11 +250,15 @@ export async function clearReminder(id: string): Promise<void> {
   await query(`update conversations set inactivity_reminder_at = null where id = $1`, [id]);
 }
 
-/** Fecha conversas inativas há mais de N horas (cron da Etapa 11). Retorna qtd fechada. */
+/**
+ * Fecha conversas do BOT inativas há mais de N horas (cron das 23:59). Retorna qtd fechada.
+ * Conversas com atendente ('human') nunca fecham sozinhas: são pedidos esperando a
+ * recepção (ex.: transbordo no fim de semana) e só a atendente finaliza.
+ */
 export async function closeInactiveConversations(hours: number): Promise<number> {
   const res = await query(
     `update conversations set status = 'closed', closed_at = coalesce(closed_at, now())
-     where status <> 'closed' and last_message_at < now() - ($1 || ' hours')::interval`,
+     where status = 'bot' and last_message_at < now() - ($1 || ' hours')::interval`,
     [String(hours)],
   );
   return res.rowCount ?? 0;

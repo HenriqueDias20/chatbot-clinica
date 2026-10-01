@@ -85,6 +85,11 @@ function text(t: string): Outgoing {
   return { kind: 'text', text: t };
 }
 
+/** Limita texto livre digitado pelo paciente (nome, convênio, descrição) a um tamanho razoável. */
+function clip(value: string, max: number): string {
+  return value.length > max ? value.slice(0, max).trim() : value;
+}
+
 function parseBirthDate(raw: string): string | null {
   const m = raw.match(/(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})/);
   if (!m) return null;
@@ -360,7 +365,7 @@ export function createBotService(deps: BotDeps = {}) {
       }
       case 'await_name': {
         if (body.length < 3) return saveOutgoing(ctx, [text('Por favor, me diga seu *nome completo*. 🙂')]);
-        const updated = await updatePatientFields(patient.id, { name: body });
+        const updated = await updatePatientFields(patient.id, { name: clip(body, 120) });
         await setConversationState(convo.id, { step: 'await_birth' });
         return saveOutgoing(ctx, [text(`Prazer, ${updated.name!.split(' ')[0]}! Qual a sua *data de nascimento*? (DD/MM/AAAA)`)]);
       }
@@ -479,7 +484,7 @@ export function createBotService(deps: BotDeps = {}) {
       case 'await_tipo_outros': {
         const kind = state.pendingKind ?? 'consulta';
         const prefix = state.pendingTipo ?? '';
-        const tipo = `${prefix}${body || 'Outros'}`;
+        const tipo = clip(`${prefix}${body || 'Outros'}`, 200);
         return saveOutgoing(ctx, await goToConvenio(convo.id, kind, tipo));
       }
 
@@ -500,7 +505,7 @@ export function createBotService(deps: BotDeps = {}) {
 
       // ── Convênio "Outros" digitado → transborda para a recepção ──
       case 'await_convenio_outros': {
-        await updatePatientFields(patient.id, { insurance: body || 'Outros' });
+        await updatePatientFields(patient.id, { insurance: clip(body || 'Outros', 100) });
         return saveOutgoing(ctx, await handoffHuman(ctx, configs));
       }
 
@@ -534,7 +539,31 @@ export function createBotService(deps: BotDeps = {}) {
     }
   }
 
-  return { handle };
+  /**
+   * Rede de segurança: se o fluxo quebrar (ex.: erro do banco), o paciente não fica
+   * sem resposta — a conversa vai para a recepção, que vê "Precisa de atendente".
+   */
+  async function handleFailure(job: InboundJob): Promise<Outgoing[]> {
+    try {
+      const phone = normalizePhone(job.phone);
+      const patient = await findOrCreatePatient(phone, job.name);
+      const convo = await getOrCreateActiveConversation(patient.id);
+      // Já está com a recepção: o bot continua calado.
+      if (convo.status === 'human') return [];
+      const ctx = { conversationId: convo.id, patientId: patient.id, phone };
+      await markHandedOff(convo.id);
+      await setConversationState(convo.id, {});
+      bus.emit('conversation:status', { conversationId: convo.id, patientId: patient.id, status: 'human' });
+      return await saveOutgoing(ctx, [
+        text('Tive um problema para continuar por aqui. 😕 Já estou te encaminhando para a nossa recepção.'),
+      ]);
+    } catch (err) {
+      log.error({ err }, 'Falha também na rede de segurança do bot');
+      return [];
+    }
+  }
+
+  return { handle, handleFailure };
 }
 
 export const botService = createBotService();

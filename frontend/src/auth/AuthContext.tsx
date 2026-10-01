@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { api, auth as tokenStore, onUnauthorized, type AuthUser } from '../lib/api';
+import { socket } from '../lib/socket';
 
 interface AuthState {
   user: AuthUser | null;
@@ -39,6 +40,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       onUnauthorized.handler = null;
     };
   }, []);
+
+  // Tempo real só para quem está logado (o backend recusa conexão sem token).
+  useEffect(() => {
+    if (user) socket.connect();
+    else socket.disconnect();
+  }, [user]);
 
   async function login(email: string, password: string): Promise<void> {
     const { token, user } = await api.login(email, password);

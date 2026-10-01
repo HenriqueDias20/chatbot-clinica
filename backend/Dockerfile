@@ -12,5 +12,8 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
+# Só depois do build: o `npm ci` acima precisa das devDependencies (tsc) para compilar.
+ENV NODE_ENV=production
+
 EXPOSE 3000
 CMD ["npm", "start"]

@@ -92,7 +92,15 @@ const ACTION_LABELS: Record<string, string> = {
 export default function Conversas() {
   const qc = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [draft, setDraft] = useState('');
+  // Rascunho por conversa: o texto digitado para um paciente nunca aparece no campo de outro.
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const draft = selectedId ? (drafts[selectedId] ?? '') : '';
+  const setDraft = (value: string) => {
+    if (selectedId) setDrafts((d) => ({ ...d, [selectedId]: value }));
+  };
+  /** Limpa o rascunho da conversa `id` se ele ainda for o texto que acabou de ser enviado. */
+  const clearDraftIfSent = (id: string, sent: string) =>
+    setDrafts((d) => ((d[id] ?? '').trim() === sent ? { ...d, [id]: '' } : d));
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState<'info' | 'hist'>('info');
   const [emojiOpen, setEmojiOpen] = useState(false);
@@ -134,6 +142,7 @@ export default function Conversas() {
     queryKey: ['demo-scenarios'],
     queryFn: api.getDemoScenarios,
     staleTime: Infinity,
+    retry: false, // demo desligada no servidor (404): o botão simplesmente não aparece
   });
 
   useEffect(() => {
@@ -172,6 +181,22 @@ export default function Conversas() {
     return () => clearInterval(id);
   }, [recording]);
 
+  // Trocar de conversa (ou sair da tela) durante a gravação descarta o áudio:
+  // ele nunca pode ir para um paciente diferente do que está na tela.
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
+  useEffect(() => {
+    return () => {
+      if (!mediaRecorderRef.current) return;
+      recCancelledRef.current = true;
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current = null;
+      audioStreamRef.current?.getTracks().forEach((t) => t.stop());
+      audioStreamRef.current = null;
+      setRecording(false);
+    };
+  }, [selectedId]);
+
   function refreshConversation(id: string) {
     qc.invalidateQueries({ queryKey: ['conversations'] });
     qc.invalidateQueries({ queryKey: ['messages', id] });
@@ -188,7 +213,7 @@ export default function Conversas() {
   const sendMessage = useMutation({
     mutationFn: ({ id, text }: { id: string; text: string }) => api.sendMessage(id, text),
     onSuccess: (_d, vars) => {
-      setDraft('');
+      clearDraftIfSent(vars.id, vars.text);
       refreshConversation(vars.id);
     },
   });
@@ -198,7 +223,7 @@ export default function Conversas() {
       return api.sendMedia(id, { fileBase64: base64, mime, filename: name, caption });
     },
     onSuccess: (_d, vars) => {
-      setDraft('');
+      if (vars.caption) clearDraftIfSent(vars.id, vars.caption);
       refreshConversation(vars.id);
     },
     onError: (e) => alert((e as Error).message),
@@ -256,6 +281,7 @@ export default function Conversas() {
           <div className="flex items-center justify-between">
             <h1 className="text-lg font-semibold text-slate-800">Atendimentos</h1>
             <div className="flex items-center gap-2">
+              {scenariosQuery.isSuccess && (
               <div className="relative">
                 <button
                   onClick={() => setDemoMenuOpen((v) => !v)}
@@ -296,6 +322,7 @@ export default function Conversas() {
                   </>
                 )}
               </div>
+              )}
               <span className="rounded-full bg-petroleum-50 px-2.5 py-0.5 text-xs font-semibold text-petroleum-700">
                 {conversations.length}
               </span>
@@ -472,7 +499,7 @@ export default function Conversas() {
                     <button
                       key={e}
                       onClick={() => {
-                        setDraft((d) => d + e);
+                        setDraft(draft + e);
                         setEmojiOpen(false);
                       }}
                       className="rounded-lg p-1 text-lg hover:bg-slate-100"
@@ -615,12 +642,18 @@ export default function Conversas() {
   }
   async function startRecording() {
     if (!selected || recording) return;
+    const startedFor = selected.id;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // A conversa mudou enquanto o navegador pedia o microfone: não grava.
+      if (selectedIdRef.current !== startedFor) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
       audioStreamRef.current = stream;
       audioChunksRef.current = [];
       recCancelledRef.current = false;
-      recConvIdRef.current = selected.id;
+      recConvIdRef.current = startedFor;
       const mr = new MediaRecorder(stream);
       mr.ondataavailable = (e) => {
         if (e.data.size > 0) audioChunksRef.current.push(e.data);

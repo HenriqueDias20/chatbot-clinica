@@ -56,6 +56,8 @@ services:
       # Dentro da rede do compose os hosts são os nomes dos serviços.
       DATABASE_URL: postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-clinica_bot}
       REDIS_URL: redis://redis:6379
+      # A imagem define NODE_ENV=production (exige os segredos); no compose local, desenvolvimento.
+      NODE_ENV: ${NODE_ENV:-development}
     ports:
       - "${PORT:-3000}:3000"
     depends_on:
