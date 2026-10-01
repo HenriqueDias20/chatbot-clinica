@@ -189,7 +189,7 @@ export function createBotService(deps: BotDeps = {}) {
     await setConversationState(conversationId, { step: 'await_cpf' });
     return [
       text(
-        `Olá! 👋 Sou o assistente virtual da ${clinic}. Para começar seu atendimento, ` +
+        `Olá! 👋 Sou o assistente virtual do ${clinic}. Para começar seu atendimento, ` +
           `preciso confirmar seu cadastro.\n\nQual o seu *CPF*? (pode mandar só os números)`,
       ),
     ];
@@ -207,11 +207,19 @@ export function createBotService(deps: BotDeps = {}) {
   /** Transborda para a recepção com o resumo já coletado (categoria/ação/tipo/convênio). */
   async function handoffHuman(
     ctx: { conversationId: string; patientId: string; phone: string },
+    configs: Record<string, string>,
   ): Promise<Outgoing[]> {
     await markHandedOff(ctx.conversationId);
     await setConversationState(ctx.conversationId, {});
     bus.emit('conversation:status', { conversationId: ctx.conversationId, patientId: ctx.patientId, status: 'human' });
-    return [text('Tudo bem! Já estou te encaminhando para a nossa recepção. 🙂')];
+    // Ligação é pela operadora: o WhatsApp mostra o número como clicável.
+    const clinicPhone = configs.clinic_phone;
+    return [
+      text(
+        'Tudo bem! Já estou te encaminhando para a nossa recepção. 🙂' +
+          (clinicPhone ? `\n\nSe preferir falar por telefone: 📞 ${clinicPhone}` : ''),
+      ),
+    ];
   }
 
   // Texto padrão de continuação após uma resposta automática do bot.
@@ -241,7 +249,7 @@ export function createBotService(deps: BotDeps = {}) {
   ): Promise<Outgoing[]> {
     const history = await loadHistory(conversationId);
     const replyCtx = {
-      clinicName: configs.clinic_name ?? 'nossa clínica',
+      clinicName: configs.clinic_name ?? 'Instituto de Medicina do Esporte',
       faq: await listActiveFaq(),
       systemExtra: `Horário de atendimento: segunda a sexta, ${configs.business_hours_start ?? env.BUSINESS_HOURS_START} às ${configs.business_hours_end ?? env.BUSINESS_HOURS_END}.`,
     };
@@ -261,7 +269,7 @@ export function createBotService(deps: BotDeps = {}) {
     switch (intent) {
       case 'FALAR_HUMANO':
         await setConversationIntake(conversationId, { category: 'atendente', action: null, subtype: null });
-        return handoffHuman(ctx);
+        return handoffHuman(ctx, configs);
       case 'DUVIDA':
         return withFollowup(conversationId, await answerFaq(msg, conversationId, configs));
       default:
@@ -335,7 +343,7 @@ export function createBotService(deps: BotDeps = {}) {
     // Atalho: pedir atendente a qualquer momento.
     if (HUMAN_KEYWORDS.test(body)) {
       await setConversationIntake(convo.id, { category: 'atendente', action: null, subtype: null });
-      return saveOutgoing(ctx, await handoffHuman(ctx));
+      return saveOutgoing(ctx, await handoffHuman(ctx, configs));
     }
 
     const state = (convo.state ?? {}) as State;
@@ -380,14 +388,15 @@ export function createBotService(deps: BotDeps = {}) {
           await setConversationIntake(convo.id, { category: 'localizacao', action: null, subtype: null });
           const address = configs.clinic_address ?? 'Endereço não cadastrado.';
           const maps = configs.clinic_maps_url;
+          const clinicPhone = configs.clinic_phone;
           const horario = configs.business_hours_text ??
             `⏰ *Horário de atendimento*\n\nSegunda a sexta: ${configs.business_hours_start ?? '08:00'} às ${configs.business_hours_end ?? '18:00'}`;
-          const msg = `📍 *Localização*\n${address}${maps ? `\n🗺️ ${maps}` : ''}\n\n${horario}`;
+          const msg = `📍 *Localização*\n${address}${maps ? `\n🗺️ ${maps}` : ''}${clinicPhone ? `\n📞 ${clinicPhone}` : ''}\n\n${horario}`;
           return saveOutgoing(ctx, await withFollowup(convo.id, [text(msg)]));
         }
         if (n === 4) {
           await setConversationIntake(convo.id, { category: 'atendente', action: null, subtype: null });
-          return saveOutgoing(ctx, await handoffHuman(ctx));
+          return saveOutgoing(ctx, await handoffHuman(ctx, configs));
         }
         if (n === 5) return saveOutgoing(ctx, await closeByUser(ctx));
         return saveOutgoing(ctx, [text('Não entendi. 🙂'), mainMenuText(patient)]);
@@ -403,7 +412,7 @@ export function createBotService(deps: BotDeps = {}) {
         // Reagendar/Cancelar são sobre algo que já existe → transbordo direto.
         if (n === 2 || n === 3) {
           await setConversationIntake(convo.id, { action: n === 2 ? 'reagendar' : 'cancelar' });
-          return saveOutgoing(ctx, await handoffHuman(ctx));
+          return saveOutgoing(ctx, await handoffHuman(ctx, configs));
         }
         if (n === 4) {
           await setConversationState(convo.id, { step: 'main_menu' });
@@ -457,7 +466,7 @@ export function createBotService(deps: BotDeps = {}) {
       case 'sessao_menu': {
         if (n === 1 || n === 2) {
           await setConversationIntake(convo.id, { action: n === 1 ? 'reagendar' : 'cancelar' });
-          return saveOutgoing(ctx, await handoffHuman(ctx));
+          return saveOutgoing(ctx, await handoffHuman(ctx, configs));
         }
         if (n === 3) {
           await setConversationState(convo.id, { step: 'main_menu' });
@@ -480,7 +489,7 @@ export function createBotService(deps: BotDeps = {}) {
         const tipo = state.pendingTipo;
         if (n >= 1 && n <= 7) {
           await updatePatientFields(patient.id, { insurance: CONVENIOS[n - 1]! });
-          return saveOutgoing(ctx, await handoffHuman(ctx));
+          return saveOutgoing(ctx, await handoffHuman(ctx, configs));
         }
         if (n === 8) {
           await setConversationState(convo.id, { step: 'await_convenio_outros', pendingKind: kind, pendingTipo: tipo });
@@ -492,7 +501,7 @@ export function createBotService(deps: BotDeps = {}) {
       // ── Convênio "Outros" digitado → transborda para a recepção ──
       case 'await_convenio_outros': {
         await updatePatientFields(patient.id, { insurance: body || 'Outros' });
-        return saveOutgoing(ctx, await handoffHuman(ctx));
+        return saveOutgoing(ctx, await handoffHuman(ctx, configs));
       }
 
       // ── Dúvida aberta (FAQ via texto livre) ──
@@ -515,7 +524,7 @@ export function createBotService(deps: BotDeps = {}) {
       // ── Sem estado: garante o cadastro; depois entende a intenção / mostra o menu ──
       default: {
         if (!isRegistered(patient)) {
-          return saveOutgoing(ctx, await startOnboarding(convo.id, configs.clinic_name ?? 'nossa clínica'));
+          return saveOutgoing(ctx, await startOnboarding(convo.id, configs.clinic_name ?? 'Instituto de Medicina do Esporte'));
         }
         const history = await loadHistory(convo.id);
         const { intent, mock } = await claude.classifyIntent(body, history);

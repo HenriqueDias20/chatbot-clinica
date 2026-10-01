@@ -88,7 +88,7 @@ const CLASSIFY_SYSTEM = [
 function buildReplySystem(ctx: ReplyContext): string {
   const faqText = ctx.faq.map((f, i) => `${i + 1}. P: ${f.question}\n   R: ${f.answer}`).join('\n');
   return [
-    `Você é o assistente virtual da ${ctx.clinicName}, atendendo pacientes pelo WhatsApp.`,
+    `Você é o assistente virtual do ${ctx.clinicName}, atendendo pacientes pelo WhatsApp.`,
     'Seja cordial, breve e objetivo. Responda em português do Brasil.',
     'Use a base de conhecimento (FAQ) abaixo para responder dúvidas.',
     'Se a pergunta fugir do FAQ ou exigir um humano, diga que vai encaminhar para a recepção.',
