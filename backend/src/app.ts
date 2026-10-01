@@ -56,7 +56,8 @@ export function buildApp(): FastifyInstance {
   app.register(agendaRoutes);
   app.register(dashboardRoutes);
   app.register(templateRoutes);
-  app.register(demoRoutes);
+  // A demonstração cria conversas fictícias: só existe com DEMO_ENABLED=true.
+  if (env.DEMO_ENABLED) app.register(demoRoutes);
 
   return app;
 }

@@ -134,6 +134,7 @@ export default function Conversas() {
     queryKey: ['demo-scenarios'],
     queryFn: api.getDemoScenarios,
     staleTime: Infinity,
+    retry: false, // demo desligada no servidor (404): o botão simplesmente não aparece
   });
 
   useEffect(() => {
@@ -256,6 +257,7 @@ export default function Conversas() {
           <div className="flex items-center justify-between">
             <h1 className="text-lg font-semibold text-slate-800">Atendimentos</h1>
             <div className="flex items-center gap-2">
+              {scenariosQuery.isSuccess && (
               <div className="relative">
                 <button
                   onClick={() => setDemoMenuOpen((v) => !v)}
@@ -296,6 +298,7 @@ export default function Conversas() {
                   </>
                 )}
               </div>
+              )}
               <span className="rounded-full bg-petroleum-50 px-2.5 py-0.5 text-xs font-semibold text-petroleum-700">
                 {conversations.length}
               </span>

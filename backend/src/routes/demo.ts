@@ -1,8 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { startDemoConversation, clearDemoConversations, SCENARIOS } from '../services/demo.service.js';
+import { requireFullAccess } from './auth.js';
 
 export async function demoRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', app.authenticate);
+  app.addHook('preHandler', requireFullAccess); // atendente não cria nem apaga dados de demo
 
   // Lista de cenários disponíveis (id + rótulo) para o painel montar o menu.
   app.get('/api/demo/scenarios', async () => {
