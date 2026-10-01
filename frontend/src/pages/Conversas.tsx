@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { socket } from '../lib/socket';
+import { useAuth } from '../auth/AuthContext';
 import type { ConversationListItem, PatientAppointment } from '../types';
 
 const EMOJIS = ['😀', '😊', '👍', '🙏', '✅', '📅', '🕐', '😉', '🤙', '👋'];
@@ -91,6 +92,7 @@ const ACTION_LABELS: Record<string, string> = {
 
 export default function Conversas() {
   const qc = useQueryClient();
+  const { user } = useAuth();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Rascunho por conversa: o texto digitado para um paciente nunca aparece no campo de outro.
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -362,6 +364,9 @@ export default function Conversas() {
           </div>
         </div>
         <div className="flex-1 overflow-y-auto px-2.5 pb-2">
+          {listFilter === 'finalized' && user?.role === 'atendente' && (
+            <div className="px-2.5 pb-2 text-[11px] text-slate-400">Aqui aparecem as conversas que você atendeu.</div>
+          )}
           {conversationsQuery.isLoading && <div className="p-4 text-sm text-slate-400">Carregando...</div>}
           {!conversationsQuery.isLoading && conversations.length === 0 && (
             <div className="p-6 text-center text-sm text-slate-400">Nenhuma conversa encontrada.</div>

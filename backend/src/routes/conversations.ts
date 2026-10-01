@@ -4,10 +4,14 @@ import {
   getConversationWithPatient,
   setConversationStatus,
   assignConversation,
+  assignIfUnassigned,
+  assignCloserIfUnassigned,
   unassignConversation,
   markRead,
   markFirstHumanResponse,
+  type ConversationWithPatient,
 } from '../repositories/conversation.repo.js';
+import type { PublicUser } from '../repositories/user.repo.js';
 import { getLastMessages, saveMessage, getMessageById } from '../repositories/message.repo.js';
 import { createSignedUrl, buildMediaPath, uploadMedia } from '../services/storage.service.js';
 import { getPatientAppointments } from '../repositories/appointment.repo.js';
@@ -22,6 +26,24 @@ const OUT_MEDIA_LABELS: Record<string, string> = {
   document: '📄 Documento',
 };
 
+/** Atendente só abre conversa finalizada se foi ela quem atendeu; os demais papéis veem tudo. */
+function canView(user: PublicUser, convo: { status: string; assigned_user_id: string | null }): boolean {
+  return user.role !== 'atendente' || convo.status !== 'closed' || convo.assigned_user_id === user.id;
+}
+const NO_ACCESS = { error: 'Você só pode abrir conversas finalizadas que atendeu.' };
+
+/** Responder sem clicar em "Assumir" também assume: o bot para e a conversa fica com quem respondeu. */
+async function assumeOnReply(convo: ConversationWithPatient, user: PublicUser): Promise<void> {
+  if (!(await assignIfUnassigned(convo.id, user.id))) return;
+  bus.emit('conversation:status', {
+    conversationId: convo.id,
+    patientId: convo.patient_id,
+    status: 'human',
+    assignedUserId: user.id,
+    assignedUserName: user.name,
+  });
+}
+
 export async function conversationRoutes(app: FastifyInstance): Promise<void> {
   // Todas as rotas do painel exigem login.
   app.addHook('preHandler', app.authenticate);
@@ -30,7 +52,9 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Querystring: { filter?: string } }>('/api/conversations', async (req) => {
     const q = req.query.filter;
     const filter = q === 'finalized' || q === 'unread' ? q : 'active';
-    const conversations = await listConversationsForPanel(filter);
+    // Atendente: na aba Finalizadas, só as conversas que ela atendeu.
+    const onlyFor = req.user!.role === 'atendente' ? req.user!.id : undefined;
+    const conversations = await listConversationsForPanel(filter, onlyFor);
     return { conversations };
   });
 
@@ -38,6 +62,7 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { id: string } }>('/api/conversations/:id/messages', async (req, reply) => {
     const convo = await getConversationWithPatient(req.params.id);
     if (!convo) return reply.code(404).send({ error: 'Conversa não encontrada' });
+    if (!canView(req.user!, convo)) return reply.code(403).send(NO_ACCESS);
     const [messages, appointments] = await Promise.all([
       getLastMessages(req.params.id, 200),
       getPatientAppointments(convo.patient_id),
@@ -74,6 +99,7 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
     const convo = await getConversationWithPatient(req.params.id);
     if (!convo) return reply.code(404).send({ error: 'Conversa não encontrada' });
     await setConversationStatus(convo.id, 'closed');
+    await assignCloserIfUnassigned(convo.id, req.user!.id);
     bus.emit('conversation:status', { conversationId: convo.id, patientId: convo.patient_id, status: 'closed' });
     return { ok: true, status: 'closed' };
   });
@@ -82,6 +108,8 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { id: string } }>('/api/messages/:id/media', async (req, reply) => {
     const msg = await getMessageById(req.params.id);
     if (!msg?.media_path) return reply.code(404).send({ error: 'Mídia não encontrada' });
+    const convo = await getConversationWithPatient(msg.conversation_id);
+    if (!convo || !canView(req.user!, convo)) return reply.code(403).send(NO_ACCESS);
     const signed = await createSignedUrl(msg.media_path);
     if (!signed.ok) return reply.code(502).send({ error: signed.error });
     return { url: signed.url, mime: msg.media_mime, type: msg.media_type, name: msg.media_name };
@@ -103,6 +131,7 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
       const convo = await getConversationWithPatient(req.params.id);
       if (!convo) return reply.code(404).send({ error: 'Conversa não encontrada' });
 
+      await assumeOnReply(convo, req.user!);
       const message = await saveMessage(convo.id, 'assistant', text);
       // Se a conversa foi transbordada, registra a 1ª resposta do atendente (métrica de SLA).
       await markFirstHumanResponse(convo.id);
@@ -159,6 +188,7 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
       filename: filename || undefined,
     });
     if (!sent.ok) return reply.code(502).send({ error: sent.error });
+    await assumeOnReply(convo, req.user!);
 
     // 2) guarda no Storage para o painel exibir (best-effort — se falhar, ainda registra)
     let media: { type: string; path: string; mime: string; name?: string | null } | undefined;
