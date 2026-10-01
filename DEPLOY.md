@@ -60,14 +60,14 @@ git push -u origin main
    | Variável | Valor |
    |---|---|
    | `DATABASE_URL` | a URL do **Session pooler** do Supabase (passo 2) |
-   | `JWT_SECRET` | um segredo forte — gere com `openssl rand -hex 32` |
+   | `JWT_SECRET` | um segredo forte — gere com `openssl rand -hex 32`. **Obrigatória:** sem ela o backend não sobe |
    | `FRONTEND_URL` | *(preenche depois, no passo 5)* — por enquanto `http://localhost:5173` |
    | `ANTHROPIC_API_KEY` | *(passo 7 — pode deixar vazio no começo)* |
    | `CLAUDE_MODEL` | `claude-haiku-4-5` |
    | `WHATSAPP_TOKEN` | *(passo 6)* |
    | `WHATSAPP_PHONE_NUMBER_ID` | *(passo 6)* |
    | `WHATSAPP_WEBHOOK_VERIFY_TOKEN` | um texto que você inventa (ex: `meu-token-123`) |
-   | `WHATSAPP_APP_SECRET` | *(passo 6)* |
+   | `WHATSAPP_APP_SECRET` | *(passo 6)* — **obrigatória junto com o `WHATSAPP_TOKEN`:** com token e sem App Secret o backend não sobe |
    | `REDIS_ENABLED` | `false` |
    | `TIMEZONE` | `America/Sao_Paulo` |
 
