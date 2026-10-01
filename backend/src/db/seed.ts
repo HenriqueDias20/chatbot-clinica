@@ -42,14 +42,15 @@ async function seed(): Promise<void> {
     // ── Configs do bot (upsert por chave) ──
     const configs: Record<string, string> = {
       welcome_message:
-        'Olá! 👋 Sou o assistente virtual da Clínica de Fisioterapia. Posso ajudar a agendar, confirmar ou cancelar sua sessão. Como posso ajudar?',
+        'Olá! 👋 Sou o assistente virtual do Instituto de Medicina do Esporte. Posso ajudar a agendar, confirmar ou cancelar sua sessão. Como posso ajudar?',
       out_of_hours_message:
         'Nosso atendimento é de segunda a sexta, das 08h às 18h. Deixe sua mensagem que retornaremos no próximo horário comercial. 🙂',
-      clinic_name: 'Clínica de Fisioterapia',
+      clinic_name: 'Instituto de Medicina do Esporte',
       business_hours_start: '08:00',
       business_hours_end: '18:00',
       clinic_address: 'R. José de Alencar, 501 - Menino Deus, Porto Alegre - RS, 90880-481',
       clinic_maps_url: 'https://maps.google.com/?q=R.+Jos%C3%A9+de+Alencar,+501+-+Menino+Deus,+Porto+Alegre+-+RS,+90880-481',
+      clinic_phone: '+55 51 99164-9642',
       business_hours_text:
         '⏰ *Horários de atendimento*\n\nSegunda a sexta: 08h às 18h\nSábados, domingos e feriados: fechado',
     };

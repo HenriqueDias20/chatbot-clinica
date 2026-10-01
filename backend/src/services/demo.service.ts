@@ -54,7 +54,7 @@ function greeting(nome: string): Turn[] {
   return [
     u('Oi, bom dia! 🙂'),
     b(
-      `Olá, ${nome}! 👋 Sou o assistente virtual da Clínica de Fisioterapia. Como posso ajudar?\n\n` +
+      `Olá, ${nome}! 👋 Sou o assistente virtual do Instituto de Medicina do Esporte. Como posso ajudar?\n\n` +
         '1️⃣ Consulta\n2️⃣ Sessão\n3️⃣ Localização / Horário\n4️⃣ Falar com atendente\n5️⃣ Encerrar atendimento\n\n' +
         RESPONDA,
     ),
